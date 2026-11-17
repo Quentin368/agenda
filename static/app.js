@@ -2863,6 +2863,16 @@ function markNow(el) {
 function paintLogo() {
   document.querySelectorAll('.mark span, .tb-s').forEach(el => el.textContent = TODAY.getDate());   // le logo affiche la date du jour
   document.querySelectorAll('.mark-m').forEach(el => el.textContent = fMs.format(TODAY).replace('.', ''));
+  paintFavicon();
+}
+/* L'icône de l'onglet reprend le logo : carré sombre, deux anneaux, le jour du mois (change à minuit avec lui) */
+function paintFavicon() {
+  const link = document.getElementById('favicon'); if (!link) return;
+  const n = TODAY.getDate();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="19" fill="#171a2c"/>`
+    + `<circle cx="21" cy="12" r="3.2" fill="#fff" opacity=".55"/><circle cx="43" cy="12" r="3.2" fill="#fff" opacity=".55"/>`
+    + `<text x="32" y="51" text-anchor="middle" font-family="Bricolage Grotesque,Arial,Helvetica,sans-serif" font-weight="700" font-size="${n > 9 ? 36 : 40}" letter-spacing="-1.5" fill="#fff">${n}</text></svg>`;
+  link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 function tick() {
   const was = TODAY, now = new Date();
