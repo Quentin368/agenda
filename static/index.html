@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agenda</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="fonts/fonts.css">
+<script src="vendor/fullcalendar/index.global.min.js"></script>
+<script src="vendor/fullcalendar/fr.global.min.js"></script>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ===================== Écran de connexion ===================== -->
+<section class="login" id="login" hidden>
+  <form class="login-card" id="login-form" novalidate>
+    <div class="brand"><div class="mark" aria-hidden="true"><i class="mark-m"></i><span></span></div><b>Agenda</b></div>
+    <div>
+      <h1>Bon retour parmi nous</h1>
+      <p class="lead">Connecte-toi pour retrouver tes calendriers.</p>
+    </div>
+    <div class="lf">
+      <label for="l-user">Identifiant</label>
+      <input class="input" id="l-user" autocomplete="username" value="quentin" aria-describedby="l-user-err">
+      <span class="err" id="l-user-err" hidden>Saisis ton identifiant.</span>
+    </div>
+    <div class="lf">
+      <label for="l-pass">Mot de passe</label>
+      <div class="pw">
+        <input class="input" id="l-pass" type="password" autocomplete="current-password" aria-describedby="l-pass-err">
+        <button type="button" class="icon-btn flat sm" id="l-eye" aria-label="Afficher le mot de passe" data-ic="eye"></button>
+      </div>
+      <span class="err" id="l-pass-err" hidden>Saisis ton mot de passe.</span>
+    </div>
+    <label class="check"><input type="checkbox" id="l-keep" checked> Rester connecté sur cet appareil</label>
+    <button class="btn primary lg" type="submit" id="l-submit">Se connecter</button>
+    <div class="pills" aria-hidden="true"><i style="flex:3;background:var(--cal-blue)"></i><i style="flex:1;background:var(--cal-pink)"></i><i style="flex:2;background:var(--cal-green)"></i></div>
+  </form>
+</section>
+
+<!-- ===================== Application ===================== -->
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar" aria-label="Navigation">
+    <div class="side-top">
+      <div class="brand"><div class="mark" aria-hidden="true"><i class="mark-m"></i><span></span></div><b>Agenda</b></div>
+      <button class="icon-btn flat sm" data-act="settings" style="margin-left:auto" aria-label="Réglages" title="Réglages  ," data-ic="gear"></button>
+      <button class="icon-btn flat sm menu-btn" data-act="close-side" aria-label="Fermer le menu" data-ic="x"></button>
+    </div>
+    <button class="btn primary new-btn" data-act="new" title="Nouvel événement  N"><span data-ic="plus"></span>Nouvel événement<kbd aria-hidden="true">N</kbd></button>
+    <div class="mini" id="mini"></div>
+    <div class="side-links">
+      <button class="side-link" data-act="bdays" id="side-bdays" title="Anniversaires  B"><span class="side-ic" data-ic="cake"></span><span class="side-t"><b>Anniversaires</b><small id="side-bdays-next"></small></span></button>
+      <button class="side-link" data-act="memories" id="side-mem" title="Souvenirs  O"><span class="side-ic mem" data-ic="history"></span><span class="side-t"><b>Souvenirs</b><small id="side-mem-sub"></small></span></button>
+      <button class="side-link" data-act="due" id="side-due" title="Échéances  E"><span class="side-ic due" data-ic="flag"></span><span class="side-t"><b>Échéances</b><small id="side-due-sub"></small></span></button>
+    </div>
+    <div>
+      <div class="sec-head"><h2>Calendriers</h2><span class="sec-acts"><button class="icon-btn flat sm" data-act="import" aria-label="Importer un fichier .ics" title="Importer un fichier .ics (ou glisse-le sur l’agenda)" data-ic="import"></button><button class="icon-btn flat sm" data-act="new-cal" aria-label="Ajouter un calendrier" title="Ajouter un calendrier" data-ic="plus"></button></span></div>
+      <div class="cal-list" id="cal-list"></div>
+    </div>
+    <div class="side-foot">
+      <div class="avatar">Q</div>
+      <div class="who">quentin<small>Connecté</small></div>
+      <div class="theme-sw" role="group" aria-label="Thème">
+        <button data-theme-set="system" aria-label="Thème du système" title="Système" data-ic="monitor"></button>
+        <button data-theme-set="light" aria-label="Thème clair" title="Clair" data-ic="sun"></button>
+        <button data-theme-set="dark" aria-label="Thème sombre" title="Sombre" data-ic="moon"></button>
+      </div>
+      <button class="icon-btn flat sm" data-act="logout" aria-label="Se déconnecter" title="Se déconnecter" data-ic="logout"></button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" data-act="open-side" aria-label="Ouvrir le menu" data-ic="menu"></button>
+      <button class="btn back-btn" data-act="back-cal" title="Retour au calendrier  Échap"><span data-ic="left"></span><span class="bb-l">Calendrier</span></button>
+      <h1 class="period"><span class="period-title" id="p-title"></span><span class="period-sub" id="p-sub"></span></h1>
+      <span class="spacer"></span>
+      <div class="navgroup" role="group" aria-label="Naviguer dans le temps">
+        <button class="nav-arrow" data-nav="prev" aria-label="Précédent" title="Précédent  ←" data-ic="left"></button>
+        <button class="today-btn" data-nav="today" title="Aujourd'hui  T" aria-label="Aujourd'hui"><span class="tb-l">Aujourd'hui</span><span class="tb-s" aria-hidden="true"></span></button>
+        <button class="nav-arrow" data-nav="next" aria-label="Suivant" title="Suivant  →" data-ic="right"></button>
+      </div>
+      <div class="views">
+        <div class="seg" role="tablist" aria-label="Affichage du calendrier">
+          <button role="tab" data-view="day" aria-selected="false" title="Jour  J">Jour</button>
+          <button role="tab" data-view="week" aria-selected="true" title="Semaine  S"><span class="wk-l">Semaine</span><span class="wk-s">3 jours</span></button>
+          <button role="tab" data-view="month" aria-selected="false" title="Mois  M">Mois</button>
+          <button role="tab" data-view="year" aria-selected="false" title="Année  A">Année</button>
+        </div>
+        <button class="plan-btn" data-view="upcoming" aria-pressed="false" title="Planning  L"><span data-ic="list"></span><span class="pb-l">Planning</span></button>
+      </div>
+      <button class="icon-btn" data-act="search" aria-label="Rechercher" title="Rechercher  /" data-ic="search"></button>
+    </header>
+    <div class="sheet">
+      <div class="hr-nav" role="group" aria-label="Faire défiler les heures"><button class="icon-btn flat sm" data-hr="-3" aria-label="Heures plus tôt" title="Plus tôt  ↑" data-ic="up"></button><button class="icon-btn flat sm" data-hr="3" aria-label="Heures plus tard" title="Plus tard  ↓" data-ic="down"></button></div>
+      <div class="cal-host" id="cal"></div>
+      <div class="page" id="page" hidden></div>
+    </div>
+  </main>
+</div>
+<div class="drawer-scrim" data-act="close-drawers"></div>
+<button class="fab" data-act="new" aria-label="Nouvel événement" data-ic="plus"></button>
+
+<!-- ===================== Fenêtre événement ===================== -->
+<div class="scrim" id="ed-scrim" hidden>
+  <form class="modal ed" id="ed" novalidate role="dialog" aria-modal="true" aria-label="Événement">
+    <div class="m-head">
+      <div class="m-title"><span class="m-kicker" id="f-kicker"></span>
+      <input class="title-input" id="f-title" placeholder="Ajouter un titre" aria-label="Titre" autocomplete="off">
+      <div class="nl-row" id="f-nl" hidden></div></div>
+      <button type="button" class="icon-btn flat f-del" id="f-delete" aria-label="Supprimer l’événement" title="Supprimer" data-ic="trash"></button>
+      <button type="button" class="icon-btn flat" data-close="ed" aria-label="Fermer" data-ic="x"></button>
+    </div>
+    <div class="m-body">
+      <div class="chips cals" id="f-cals" role="radiogroup" aria-label="Calendrier"></div>
+      <div class="f-row"><span data-ic="clock"></span>
+        <div class="f-col">
+          <div class="when-top"><div class="when-sum" id="f-sum" hidden></div><label class="switch"><input type="checkbox" id="f-allday"><span class="track"></span>Journée</label></div>
+          <div class="when">
+            <span class="lbl">De</span><input class="field" type="date" id="f-sd" aria-label="Date de début"><input class="field w-time" type="time" step="900" id="f-st" aria-label="Heure de début">
+            <span class="lbl">À</span><input class="field" type="date" id="f-ed" aria-label="Date de fin"><input class="field w-time" type="time" step="900" id="f-et" aria-label="Heure de fin">
+          </div>
+          <span class="f-err" id="f-err" hidden>La fin doit être après le début.</span>
+          <div class="f-warn" id="f-warn" role="status" hidden></div>
+        </div>
+      </div>
+      <div class="f-row" id="f-rep-row"><span data-ic="repeat"></span>
+        <div class="f-col">
+          <select class="field wide" id="f-freq" aria-label="Répétition"><option value="none">Ne se répète pas</option><option value="daily">Tous les jours</option><option value="weekly">Toutes les semaines</option><option value="monthly">Tous les mois</option><option value="yearly">Tous les ans</option></select>
+          <div class="days" id="f-days" aria-label="Jours de la semaine"></div>
+          <div class="inline" id="f-until-row">
+            <label class="radio"><input type="radio" name="until" value="never" id="f-until-never"> Sans fin</label>
+            <label class="radio"><input type="radio" name="until" value="date" id="f-until-date"> Jusqu'au</label>
+            <input class="field" type="date" id="f-until" aria-label="Date de fin de répétition">
+          </div>
+        </div>
+      </div>
+      <div class="f-row" id="f-rem-row"><span data-ic="bell"></span><div class="f-col"><select class="field wide" id="f-rem" aria-label="Rappel"></select></div></div>
+      <div class="f-row" id="f-loc-row"><span data-ic="pin"></span><div class="f-col"><input class="field wide" id="f-loc" placeholder="Lieu" aria-label="Lieu"></div></div>
+      <div class="f-row" id="f-desc-row"><span data-ic="text"></span><div class="f-col"><textarea class="field" id="f-desc" placeholder="Note" aria-label="Note"></textarea></div></div>
+      <div class="f-add" id="f-add"><button type="button" data-add="loc"><span data-ic="pin"></span>Lieu</button><button type="button" data-add="desc"><span data-ic="text"></span>Note</button><button type="button" data-add="rem"><span data-ic="bell"></span>Rappel</button><button type="button" data-add="rep"><span data-ic="repeat"></span>Répéter</button></div>
+    </div>
+    <div class="m-foot">
+      <button type="button" class="btn ghost" data-close="ed">Annuler</button>
+      <span class="spacer"></span>
+      <span class="f-leave" id="f-leave" role="status" hidden>Non enregistré · <kbd>Échap</kbd> pour abandonner</span>
+      <button type="submit" class="btn primary">Enregistrer</button>
+    </div>
+  </form>
+</div>
+
+<!-- ===================== Question récurrence ===================== -->
+<div class="scrim top" id="sc-scrim" hidden>
+  <form class="modal sm" id="sc" role="dialog" aria-modal="true" aria-labelledby="sc-title">
+    <div class="m-head"><h2 id="sc-title"></h2></div>
+    <div class="scope">
+      <label><input type="radio" name="scope" value="this" checked><span><b>Cette occurrence</b><small id="sc-date"></small></span></label>
+      <label><input type="radio" name="scope" value="future"><span><b>Cette occurrence et les suivantes</b><small id="sc-future"></small></span></label>
+      <label><input type="radio" name="scope" value="all"><span><b>Toutes les occurrences</b><small>Toute la série</small></span></label>
+    </div>
+    <div class="m-foot"><span class="spacer"></span><button type="button" class="btn ghost" id="sc-cancel">Annuler</button><button type="submit" class="btn primary" id="sc-ok"></button></div>
+  </form>
+</div>
+
+<!-- ===================== Gestion d'un calendrier ===================== -->
+<div class="scrim" id="ce-scrim" hidden>
+  <form class="modal sm" id="ce" novalidate role="dialog" aria-modal="true" aria-labelledby="ce-title">
+    <div class="m-head"><h2 id="ce-title">Modifier le calendrier</h2><button type="button" class="icon-btn flat" data-close="ce" aria-label="Fermer" data-ic="x"></button></div>
+    <div id="ce-edit">
+      <div class="m-body">
+        <div class="f-col"><label class="f-label" for="ce-name">Nom</label><input class="field wide" id="ce-name" autocomplete="off"><span class="f-err" id="ce-err" hidden>Donne un nom au calendrier.</span></div>
+        <div class="f-col"><span class="f-label">Couleur</span><div class="swatches" id="ce-sw" role="radiogroup" aria-label="Couleur"></div></div>
+        <div class="f-col" id="ce-sub"><label class="f-label" for="ce-url">Lien d’abonnement <small id="ce-url-k">facultatif · adresse iCal (.ics)</small></label>
+          <input class="field wide" id="ce-url" type="url" inputmode="url" placeholder="https://… ou webcal://…" autocomplete="off" spellcheck="false">
+          <span class="ce-sub-st" id="ce-sub-st"></span><span class="f-err" id="ce-url-err" hidden></span></div>
+        <div class="f-col"><span class="f-label">Aperçu</span><div class="preview-ev" id="ce-prev"></div></div>
+      </div>
+      <div class="m-foot">
+        <button type="button" class="btn danger-ghost" id="ce-del"><span data-ic="trash"></span>Supprimer</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close="ce">Annuler</button>
+        <button type="submit" class="btn primary">Enregistrer</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- ===================== Anniversaire ===================== -->
+<div class="scrim" id="bd-scrim" hidden>
+  <form class="modal sm" id="bd" novalidate role="dialog" aria-modal="true" aria-labelledby="bd-title">
+    <div class="m-head"><h2 id="bd-title">Nouvel anniversaire</h2><button type="button" class="icon-btn flat" data-close="bd" aria-label="Fermer" data-ic="x"></button></div>
+    <div class="m-body">
+      <div class="f-col"><label class="f-label" for="bd-name">Nom</label>
+        <div class="bd-nrow"><input class="field wide" id="bd-name" autocomplete="off" placeholder="Prénom Nom"><button type="button" class="icon-btn bd-fav" id="bd-fav" aria-pressed="false" aria-label="Favori" title="Favori : couronne, rappel la veille en plus" data-ic="crown"></button></div>
+        <span class="f-err" id="bd-err" hidden>Indique un nom.</span></div>
+      <div class="f-col"><span class="f-label">Date</span>
+        <div class="bd-date"><select class="field" id="bd-day" aria-label="Jour"></select><select class="field" id="bd-month" aria-label="Mois"></select><input class="field" id="bd-year" type="number" inputmode="numeric" min="1900" max="2100" placeholder="Année (facultatif)" aria-label="Année de naissance (facultatif)"></div>
+        <span class="f-err" id="bd-derr" hidden>Cette date n'existe pas.</span></div>
+      <div class="f-col"><span class="f-label">Groupe</span><div class="chips bd-grp" id="bd-grp" role="radiogroup" aria-label="Groupe"></div></div>
+      <div class="f-col"><label class="f-label" for="bd-rem">Rappel</label>
+        <select class="field wide" id="bd-rem"><option value="none">Aucun rappel</option><option value="-540">Le jour même à 9 h</option><option value="360">La veille à 18 h</option><option value="1440">1 jour avant</option><option value="10080">1 semaine avant</option></select></div>
+      <div class="f-col"><label class="f-label" for="bd-gift">Idées cadeaux</label><div class="bd-gifts" id="bd-gifts"></div>
+        <input class="field wide" id="bd-gift" autocomplete="off" placeholder="Ajouter une idée, puis Entrée"></div>
+      <div class="bd-preview" id="bd-prev"></div>
+    </div>
+    <div class="m-foot"><button type="button" class="btn danger-ghost" id="bd-delete"><span data-ic="trash"></span>Supprimer</button><span class="spacer"></span><button type="button" class="btn ghost" data-close="bd">Annuler</button><button type="button" class="btn" id="bd-more" title="Enregistre et garde la fenêtre ouverte pour le suivant">Ajouter et continuer</button><button type="submit" class="btn primary">Enregistrer</button></div>
+  </form>
+</div>
+
+<!-- ===================== Recherche ===================== -->
+<div class="scrim top palette-scrim" id="sr-scrim" hidden>
+  <div class="modal palette" role="dialog" aria-modal="true" aria-label="Rechercher un événement">
+    <div class="sr-head"><span data-ic="search"></span><input id="sr-q" class="sr-input" placeholder="Rechercher un événement, un lieu, une personne…" autocomplete="off" role="combobox" aria-expanded="true" aria-controls="sr-list" aria-label="Rechercher"><kbd>Échap</kbd></div>
+    <div class="sr-label" id="sr-label"></div>
+    <div class="sr-list" id="sr-list" role="listbox"></div>
+    <div class="sr-foot"><span><kbd>↑</kbd><kbd>↓</kbd> naviguer</span><span><kbd>Entrée</kbd> ouvrir</span></div>
+  </div>
+</div>
+
+<!-- ===================== Importer un fichier .ics ===================== -->
+<input type="file" id="ics-file" accept=".ics,.ical,.icalendar,text/calendar" multiple hidden>
+<div class="drop-ics" id="drop-ics" hidden><div><span data-ic="import"></span><b>Dépose le fichier pour l’ajouter</b><small>Fichier d’agenda .ics : billet, invitation, emploi du temps…</small></div></div>
+<div class="scrim" id="imp-scrim" hidden>
+  <div class="modal imp" role="dialog" aria-modal="true" aria-labelledby="imp-title">
+    <div class="m-head"><div class="m-title"><span class="m-kicker" id="imp-kicker"></span><h2 id="imp-title"></h2></div><button type="button" class="icon-btn flat" data-close="imp" aria-label="Fermer" data-ic="x"></button></div>
+    <div class="m-body">
+      <div class="imp-list" id="imp-list"></div>
+      <div class="imp-to" id="imp-to"><span class="f-label">Dans le calendrier</span><div class="chips cals" id="imp-cals" role="radiogroup" aria-label="Calendrier"></div></div>
+      <div class="imp-note" id="imp-note" hidden></div>
+    </div>
+    <div class="m-foot"><button type="button" class="btn ghost" data-close="imp">Annuler</button><span class="spacer"></span><button type="button" class="btn primary" id="imp-ok">Ajouter</button></div>
+  </div>
+</div>
+
+<!-- ===================== Notice : entrées rapides ===================== -->
+<div class="scrim top" id="nlh-scrim" hidden>
+  <div class="modal nlh" role="dialog" aria-modal="true" aria-labelledby="nlh-title">
+    <div class="m-head"><h2 id="nlh-title">Entrées rapides</h2><button type="button" class="icon-btn flat" data-close="nlh" aria-label="Fermer" data-ic="x"></button></div>
+    <div class="m-body">
+      <p class="nlh-lead">Écris l’événement comme tu le dirais. Les mots compris sont <mark>surlignés</mark>, rangés dans les bons champs, puis retirés du titre.</p>
+      <div class="nlh-exs" id="nlh-ex"></div>
+      <section>
+        <h3>Ce qui est compris</h3>
+        <dl class="nlh-table">
+          <dt><span data-ic="cal"></span>Jour</dt><dd><code>demain</code> <code>mardi</code> <code>le 21</code> <code>3/12</code> <code>14 déc.</code> <code>dans 3 jours</code> <code>ce week-end</code> <code>la semaine prochaine</code></dd>
+          <dt><span data-ic="clock"></span>Heure</dt><dd><code>15h</code> <code>15h30</code> <code>à midi</code> <code>de 14h à 16h</code> <code>10-12h</code> <code>ce soir</code> <code>demain matin</code> <code>dans 2h</code></dd>
+          <dt><span data-ic="clock"></span>Durée</dt><dd><code>pendant 45 min</code> <code>pour 1h30</code> <code>jusqu’à 18h</code></dd>
+          <dt><span data-ic="cal"></span>Plusieurs jours</dt><dd><code>du 14 au 18 déc.</code> <code>du lundi au vendredi</code> <code>pendant 3 jours</code> <code>toute la journée</code></dd>
+          <dt><span data-ic="repeat"></span>Répétition</dt><dd><code>tous les jours</code> <code>en semaine</code> <code>tous les lundis</code> <code>les mardis et jeudis</code> <code>chaque mois</code> <code>jusqu’au 20 déc.</code></dd>
+          <dt><span data-ic="pin"></span>Lieu</dt><dd><code>@Clinique du Parc</code> <code>salle B204</code> <code>amphi A</code> <code>chez Paul</code></dd>
+          <dt><span class="nlh-hash">#</span>Calendrier</dt><dd><span id="nlh-cals"></span> <small>le début du nom suffit</small></dd>
+        </dl>
+      </section>
+      <section>
+        <h3>Bon à savoir</h3>
+        <ul class="nlh-tips">
+          <li><b>Le lieu après @</b> s’arrête à une virgule, au prochain élément compris (heure, jour, #calendrier) ou à la fin : <em>«&nbsp;Dentiste @Clinique du Parc, contrôle annuel&nbsp;»</em>.</li>
+          <li><b>Un mot pris à tort&nbsp;?</b> Clique sa puce sous le titre : il reste dans le titre, tel quel.</li>
+          <li><b>Sans heure</b>, l’événement prend toute la journée. Une heure déjà passée aujourd’hui part au lendemain.</li>
+          <li><b>Création rapide</b> (clic dans la grille) : le jour est celui du créneau, tout le reste marche pareil.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== Réglages ===================== -->
+<div class="scrim" id="set-scrim" hidden>
+  <div class="modal sm" role="dialog" aria-modal="true" aria-labelledby="set-title">
+    <div class="m-head"><h2 id="set-title">Réglages</h2><button type="button" class="icon-btn flat" data-close="set" aria-label="Fermer" data-ic="x"></button></div>
+    <div class="m-body set-body">
+      <section><h3>Apparence</h3>
+        <div class="set-row stack"><span>Style des événements<small>Plein se voit le plus, Léger est le plus calme</small></span><div class="chips" id="set-evstyle"><button type="button" data-evstyle="solid"><i class="evs evs-solid" aria-hidden="true"></i>Plein</button><button type="button" data-evstyle="pastel"><i class="evs evs-pastel" aria-hidden="true"></i>Coloré</button><button type="button" data-evstyle="light"><i class="evs evs-light" aria-hidden="true"></i>Léger</button></div></div>
+        <div class="set-row stack"><span>Début de la journée<small>La journée s'affiche jusqu'à 23 h. Les heures masquées réapparaissent s'il y a un événement</small></span><div class="chips" id="set-start"><button type="button" data-start="06">6 h</button><button type="button" data-start="07">7 h</button><button type="button" data-start="08">8 h</button><button type="button" data-start="00">Minuit</button></div></div>
+        <div class="set-row"><span>Afficher le week-end</span><label class="switch"><input type="checkbox" id="set-weekends" aria-label="Afficher le week-end"><span class="track"></span></label></div>
+      </section>
+      <section><h3>Rappels</h3>
+        <div class="set-row"><span>Rappel par défaut<small>Pour les nouveaux événements avec une heure</small></span><select class="field" id="set-rem"><option value="none">Aucun</option><option value="10">10 min avant</option><option value="30">30 min avant</option><option value="60">1 h avant</option></select></div>
+        <div class="set-row"><span>Notifications à l'écran<small>Une carte apparaît en haut quand un rappel tombe</small></span><label class="switch"><input type="checkbox" id="set-notif" aria-label="Notifications à l’écran"><span class="track"></span></label></div>
+        <div class="set-row"><span></span><button type="button" class="btn" id="set-test"><span data-ic="bell"></span>Tester une notification</button></div>
+      </section>
+      <section><h3>Aide</h3>
+        <div class="set-row"><span>Raccourcis clavier</span><button type="button" class="btn ghost" data-act="help">Voir la liste<kbd>?</kbd></button></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="notifs" id="notifs" aria-live="polite"></div>
+
+<!-- ===================== Raccourcis clavier ===================== -->
+<div class="scrim" id="kb-scrim" hidden>
+  <div class="modal sm" role="dialog" aria-modal="true" aria-labelledby="kb-title">
+    <div class="m-head"><h2 id="kb-title">Raccourcis clavier</h2><button type="button" class="icon-btn flat" data-close="kb" aria-label="Fermer" data-ic="x"></button></div>
+    <div class="m-body kb-list">
+      <div><span>Aujourd'hui</span><span><kbd>T</kbd></span></div>
+      <div><span>Période précédente / suivante</span><span><kbd>←</kbd><kbd>→</kbd></span></div>
+      <div><span>Heures plus tôt / plus tard</span><span><kbd>↑</kbd><kbd>↓</kbd></span></div>
+      <div><span>Vue Jour, Semaine, Mois</span><span><kbd>J</kbd><kbd>S</kbd><kbd>M</kbd></span></div>
+      <div><span>Vue Année</span><span><kbd>A</kbd></span></div>
+      <div><span>Planning</span><span><kbd>L</kbd></span></div>
+      <div><span>Anniversaires (ouvrir / revenir)</span><span><kbd>B</kbd></span></div>
+      <div><span>Souvenirs (ouvrir / revenir)</span><span><kbd>O</kbd></span></div>
+      <div><span>Échéances (ouvrir / revenir)</span><span><kbd>E</kbd></span></div>
+      <div><span>Nouvel événement</span><span><kbd>N</kbd></span></div>
+      <div><span>Ajouter un fichier .ics</span><span class="kb-txt">le glisser sur l’agenda</span></div>
+      <div><span>Date, heure et lieu dans le titre</span><span><button type="button" class="nl-more" data-nl-help>Entrées rapides</button></span></div>
+      <div><span>Rechercher</span><span><kbd>/</kbd><kbd>Ctrl K</kbd></span></div>
+      <div><span>Dupliquer un événement</span><span><kbd>Ctrl</kbd>+ glisser</span></div>
+      <div><span>Supprimer l'événement ouvert</span><span><kbd>Suppr</kbd></span></div>
+      <div><span>Annuler la dernière action</span><span><kbd>Ctrl Z</kbd></span></div>
+      <div><span>Rétablir ce qui vient d'être annulé</span><span><kbd>Ctrl Y</kbd></span></div>
+      <div><span>Fermer</span><span><kbd>Échap</kbd></span></div>
+      <div><span>Réglages</span><span><kbd>,</kbd></span></div>
+      <div><span>Cette aide</span><span><kbd>?</kbd></span></div>
+    </div>
+  </div>
+</div>
+
+<script src="demo.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

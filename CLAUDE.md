@@ -31,7 +31,11 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - Conventions des piles Docker : un dossier par pile dans `~/docker/<nom>/`, volumes en CHEMINS ABSOLUS
   (Dockge transforme mal les chemins relatifs), fichiers appartenant à quentin (PUID/PGID 1000),
   `TZ=Europe/Paris`, secrets dans `.env`. Port proposé pour l'agenda : **8090** (vérifier qu'il est libre).
-- Code dans `~/projets/agenda` (git), déploiement dans `~/docker/agenda`.
+- Code dans `~/projets/agenda` (git, dépôt GitHub **privé** `Chewbacca-368/agenda`, envoi via `gh`/HTTPS ;
+  auteur des commits = adresse noreply GitHub, réglée localement), déploiement dans `~/docker/agenda`.
+- Frontend : `static/index.html`, `static/app.css`, `static/app.js` ; dépendances embarquées dans
+  `static/vendor/` et `static/fonts/`. Données de démo isolées dans `static/demo.js` (`loadDemo()`, appelée
+  par `app.js` si le fichier est présent) — à supprimer en phase 2.
 
 ## La maquette : ce qu'il faut savoir (`maquette.html`, ~4 900 lignes, tout-en-un)
 - Dépendances externes : FullCalendar 6.1.15 + locale fr (jsdelivr), polices Google Fonts
