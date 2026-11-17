@@ -1,10 +1,8 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 4 terminée** (17/11/2026), en attente de validation : conteneur sur l'image construite sur le Pi
-(`AGENDA_IMAGE=agenda:dev` dans `.env`, temporaire), verrou d'écriture actif. Pas encore envoyée sur GitHub.
-Après validation : envoi sur GitHub, attendre le workflow, `docker compose pull`, retirer `AGENDA_IMAGE` du `.env`,
-`docker compose up -d`.
+**Phase 4 validée** (17/11/2026) et envoyée sur GitHub ; conteneur sur l'image ghcr.io, verrou d'écriture
+toujours actif. **Prochaine étape : phase 5** (revues, README, bascule sur les vrais calendriers avec accord).
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
