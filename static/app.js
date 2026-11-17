@@ -723,10 +723,17 @@ $('mini').addEventListener('keydown', e => {
 });
 
 /* ===================== Liste des calendriers ===================== */
+/* Nombre d'événements d'un calendrier : une série compte une fois (y compris une série « spéciale » que le serveur
+   envoie occurrence par occurrence) */
+function calCount(id) {
+  const seen = new Set();
+  S.events.forEach(e => { if (e.cal === id) seen.add((typeof SRV_META !== 'undefined' && SRV_META.events?.[e.id]?.series) || e.id); });
+  return seen.size;
+}
 function renderCalList() {
   $('cal-list').innerHTML = S.calendars.map(c => `
     <div class="cal-row" style="--c:var(--cal-${c.color})">
-      <label><input type="checkbox" data-vis="${c.id}" ${c.visible ? 'checked' : ''}><span class="cbox">${svg('check')}</span><span class="cal-name">${esc(c.name)}</span>${c.sub ? `<span class="cal-sub${c.sub.err ? ' err' : ''}" title="${esc(c.sub.err ? `Abonnement : échec de la mise à jour (${c.sub.err})` : `Abonnement · mis à jour ${c.sub.at ? agoTxt(c.sub.at) : '—'}`)}">${svg(c.sub.err ? 'alert' : 'link')}</span>` : ''}</label>
+      <label><input type="checkbox" data-vis="${c.id}" ${c.visible ? 'checked' : ''}><span class="cbox">${svg('check')}</span><span class="cal-name">${esc(c.name)}</span>${c.sub ? `<span class="cal-sub${c.sub.err ? ' err' : ''}" title="${esc(c.sub.err ? `Abonnement : échec de la mise à jour (${c.sub.err})` : `Abonnement · mis à jour ${c.sub.at ? agoTxt(c.sub.at) : '—'}`)}">${svg(c.sub.err ? 'alert' : 'link')}</span>` : ''}<span class="cal-n" title="${calCount(c.id)} événement${calCount(c.id) > 1 ? 's' : ''}">${calCount(c.id)}</span></label>
       <button class="icon-btn flat sm more" data-cal-edit="${c.id}" aria-label="Gérer ${esc(c.name)}" title="Gérer">${svg('dots')}</button>
     </div>`).join('');
   calListFade();

@@ -260,6 +260,12 @@ mark { background: color-mix(in srgb, var(--hl) 70%, transparent); color: inheri
 .cal-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-row .more { opacity: 0; transition: opacity .12s; }
 .cal-row:hover .more, .cal-row .more:focus-visible { opacity: 1; }
+/* Nombre d'événements : à la place du bouton « … », qui le remplace au survol */
+.cal-row { position: relative; }
+.cal-n { position: absolute; right: 2px; width: 30px; top: 50%; transform: translateY(-50%); text-align: center; pointer-events: none;
+  font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; transition: opacity .12s; }
+.cal-row:hover .cal-n, .cal-row:focus-within .cal-n { opacity: 0; }
+@media (hover: none) { .cal-n { position: static; transform: none; width: auto; margin-left: auto; } .cal-row:focus-within .cal-n { opacity: 1; } }
 @media (hover: none) { .cal-row .more { opacity: .6; } .new-btn kbd { display: none; } }
 
 .side-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 10px 2px 0; border-top: 1px solid var(--line); }
