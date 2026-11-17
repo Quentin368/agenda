@@ -1,10 +1,9 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 3 terminée** (17/11/2026), en attente de validation : conteneur `agenda` sur le port 8090 avec l'image
-construite sur le Pi (`AGENDA_IMAGE=agenda:dev` dans `.env`, temporaire) et le verrou d'écriture actif
-(`WRITABLE_CALENDARS=dev-agenda,dev-*`). Pas encore envoyée sur GitHub. Après validation : envoi sur GitHub, attendre
-le workflow, `docker compose pull`, retirer la ligne `AGENDA_IMAGE` du `.env`, `docker compose up -d`.
+**Phase 3 validée** (17/11/2026) et envoyée sur GitHub ; conteneur sur l'image ghcr.io, verrou d'écriture actif
+(`WRITABLE_CALENDARS=dev-agenda,dev-*`). Correctif : plus de connexions gardées ouvertes vers Radicale + une nouvelle
+tentative pour les lectures (fausse erreur « injoignable » vue sur GitHub). **Prochaine étape : phase 4.**
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
