@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Logo de l'agenda : une page de calendrier, sans fond. Noire en thème clair, blanche en thème sombre.
+  <!-- Logo de l'agenda : une page de calendrier noire, sans fond (la même quel que soit le thème).
        L'en-tête et le contour des attaches sont découpés (transparents). -->
-  <style>.c{fill:#171a2c}@media (prefers-color-scheme:dark){.c{fill:#fff}}</style>
+  <style>.c{fill:#171a2c}</style>
   <mask id="m">
     <rect width="64" height="64" fill="#fff"/>
     <rect x="0" y="24" width="64" height="4.5" fill="#000"/>
