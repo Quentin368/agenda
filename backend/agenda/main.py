@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import unicodedata
 from contextlib import asynccontextmanager
 
@@ -25,10 +26,12 @@ TASKS = 'echeances'               # collection des échéances (préfixée « de
 
 log = logging.getLogger('agenda')
 COOKIE = 'agenda_sid'
+MAX_LOGIN = 16 * 1024                    # formulaire de connexion
+MAX_BODY = 20 * 1024 * 1024              # lot de modifications (un gros import .ics)
 CSRF_HEADER = 'x-csrf-token'
 CLIENT_HEADER = 'x-requested-with'      # en-tête maison : une page d'un autre site ne peut pas l'envoyer sans autorisation CORS
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
-       "connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+       "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
 class LoginIn(BaseModel):
@@ -57,6 +60,19 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
 
     def dav(user: str, password: str) -> DavClient:
         return DavClient(cfg.radicale_url, user, password, client=state['http'])
+
+    # ---------- taille des requêtes : pas de corps énorme (surtout avant d'être connecté)
+    @app.middleware('http')
+    async def body_limit(request: Request, call_next):
+        limit = MAX_LOGIN if request.url.path == '/api/login' else MAX_BODY
+        try:
+            declared = int(request.headers.get('content-length') or 0)
+        except ValueError:
+            declared = limit + 1
+        if declared > limit or (request.method in ('POST', 'PUT') and 'content-length' not in request.headers
+                                and request.headers.get('transfer-encoding')):
+            return JSONResponse({'error': 'requête trop grosse'}, status_code=413)
+        return await call_next(request)
 
     # ---------- en-têtes de sécurité et de cache
     @app.middleware('http')
@@ -89,7 +105,7 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
 
     def current_csrf(request: Request, s: Session = Depends(current)) -> Session:
         same_origin(request)
-        if request.headers.get(CSRF_HEADER) != s.csrf:
+        if not secrets.compare_digest(request.headers.get(CSRF_HEADER, ''), s.csrf):
             raise HTTPException(403, 'jeton CSRF invalide')
         return s
 

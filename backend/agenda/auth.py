@@ -111,6 +111,9 @@ class RateLimiter:
         with self._lock:
             for k in keys:
                 self._clean(k, now).append(now)
+            if len(self._f) > 10000:            # beaucoup d'identifiants essayés : on oublie les clés expirées
+                for k in [k for k, q in self._f.items() if not q or q[-1] <= now - self.window]:
+                    del self._f[k]
 
     def success(self, *keys: str) -> None:
         with self._lock:

@@ -115,3 +115,9 @@ def test_ressource_illisible_n_empeche_pas_le_reste():
                                          Item('/q/perso/ok.ics', '"2"', ok)]}, 'Europe/Paris')
     assert [e['id'] for e in d['events']] == ['ok'] and [e['href'] for e in d['errors']] == ['/q/perso/casse.ics']
     assert d['calendars'][0]['color'] == 'slate'
+
+
+def test_requete_trop_grosse_refusee(client):
+    r = client.post('/api/login', content=b'{"user":"' + b'x' * 20000 + b'"}', headers={**H, 'Content-Type': 'application/json'})
+    assert r.status_code == 413
+    assert "connect-src 'self';" in client.get('/').headers['content-security-policy']

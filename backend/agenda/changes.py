@@ -385,6 +385,8 @@ class Applier:
         self.s.trash_cals[cal_id] = {
             'items': [{'name': it.href.rsplit('/', 1)[-1], 'data': it.data, 'meta': metas.get(it.href, {})} for it in items],
             'ids': {i for d in metas.values() for i in d}}
+        while len(self.s.trash_cals) > 5:                          # garder les 5 dernières suppressions
+            self.s.trash_cals.pop(next(iter(self.s.trash_cals)))
         await self.dav.delete(href, None)
         for i in self.s.trash_cals[cal_id]['ids']:
             self.s.meta_events.pop(i, None)

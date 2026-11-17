@@ -115,6 +115,15 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   champs affichés.
 - Rappels : pas de notifications système en plus (comme la maquette ; le téléphone lit les VALARM).
 
+## Décisions validées (17/11/2026, début de phase 5)
+- Liens d'abonnement : le serveur **refuse les adresses non publiques** (réseau local, conteneurs, localhost…),
+  y compris après une redirection.
+- Port 8090 : ouvert sur toutes les interfaces, comme les autres piles.
+- Bascule : **sauvegarde** des données Radicale dans `~/docker/agenda/sauvegardes` d'abord, puis retrait du verrou
+  (`WRITABLE_CALENDARS=*`) seulement après mon « go » explicite ; calendriers de test `dev-…` supprimés ensuite
+  avec mon accord.
+- **Sauvegarde quotidienne** (crontab de quentin, 3 h) des données Radicale, 14 dernières gardées.
+
 ## Correspondances iCalendar (validées le 17/11/2026)
 - Événement ⇄ VEVENT ; `id` ⇄ UID (si l'UID contient des caractères non sûrs — `@`, `/`… — l'id est une
   empreinte stable `h…` ; le vrai UID, la ressource et l'ETag sont dans `meta`, hors de `S`) ;

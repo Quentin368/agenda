@@ -83,6 +83,20 @@ def _q(ns: str, tag: str) -> str:
     return f'{{{NS[ns]}}}{tag}'
 
 
+class Conflict(Exception):
+    """La ressource a changé (ou existe déjà / n'existe plus) depuis la dernière lecture : rien n'est écrasé."""
+
+
+
+
+def _etag(r: httpx.Response) -> str | None:
+    return r.headers.get('etag')
+
+
+def _xml(s: str) -> str:
+    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
 class DavClient:
     def __init__(self, base_url: str, user: str, password: str, client: httpx.AsyncClient | None = None):
         self.base = base_url
@@ -185,102 +199,81 @@ class DavClient:
         res = await asyncio.gather(*(self.events(c.href) for c in cols))
         return {c.href: items for c, items in zip(cols, res)}
 
-
-# ---------------------------------------------------------------- écriture
-class Conflict(Exception):
-    """La ressource a changé (ou existe déjà / n'existe plus) depuis la dernière lecture : rien n'est écrasé."""
-
-
-def _etag(r: httpx.Response) -> str | None:
-    return r.headers.get('etag')
-
-
-async def _write(self: DavClient, method: str, href: str, *, body: bytes | None = None, headers: dict | None = None,
-                 ok=(200, 201, 204)) -> httpx.Response:
-    try:
-        r = await self._client.request(method, self._url(href), content=body, auth=self._auth, headers=headers or {})
-    except httpx.HTTPError as e:
-        raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
-    if r.status_code in (401, 403):
-        raise AuthError()
-    if r.status_code in (409, 412):
-        raise Conflict(f'{method} {href} : {r.status_code}')
-    if r.status_code not in ok:
-        raise DavError(f'{method} {href} : réponse {r.status_code}')
-    return r
-
-
-async def get(self: DavClient, href: str) -> Item:
-    """iCal brut + ETag actuels d'une ressource (404 → Conflict : elle a disparu entre-temps)."""
-    for attempt in (1, 2):               # lecture : une nouvelle tentative si la connexion a sauté
+    # ------------------------------------------------------------ écriture
+    async def _write(self, method: str, href: str, *, body: bytes | None = None, headers: dict | None = None,
+                     ok=(200, 201, 204)) -> httpx.Response:
         try:
-            r = await self._client.get(self._url(href), auth=self._auth)
-            break
-        except httpx.TransportError as e:
-            if attempt == 2:
-                raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
+            r = await self._client.request(method, self._url(href), content=body, auth=self._auth, headers=headers or {})
         except httpx.HTTPError as e:
             raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
-    if r.status_code in (401, 403):
-        raise AuthError()
-    if r.status_code == 404:
-        raise Conflict(f'GET {href} : 404')
-    if r.status_code != 200:
-        raise DavError(f'GET {href} : réponse {r.status_code}')
-    return Item(href=href, etag=_etag(r), data=r.text)
+        if r.status_code in (401, 403):
+            raise AuthError()
+        if r.status_code in (409, 412):
+            raise Conflict(f'{method} {href} : {r.status_code}')
+        if r.status_code not in ok:
+            raise DavError(f'{method} {href} : réponse {r.status_code}')
+        return r
 
 
-async def put(self: DavClient, href: str, ics: str, etag: str | None) -> str | None:
-    """Écrit une ressource. etag=None : création (If-None-Match: *) ; sinon remplacement si inchangée (If-Match)."""
-    h = {'Content-Type': 'text/calendar; charset=utf-8', **({'If-Match': etag} if etag else {'If-None-Match': '*'})}
-    r = await _write(self, 'PUT', href, body=ics.encode(), headers=h)
-    return _etag(r)
+    async def get(self, href: str) -> Item:
+        """iCal brut + ETag actuels d'une ressource (404 → Conflict : elle a disparu entre-temps)."""
+        for attempt in (1, 2):               # lecture : une nouvelle tentative si la connexion a sauté
+            try:
+                r = await self._client.get(self._url(href), auth=self._auth)
+                break
+            except httpx.TransportError as e:
+                if attempt == 2:
+                    raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
+            except httpx.HTTPError as e:
+                raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
+        if r.status_code in (401, 403):
+            raise AuthError()
+        if r.status_code == 404:
+            raise Conflict(f'GET {href} : 404')
+        if r.status_code != 200:
+            raise DavError(f'GET {href} : réponse {r.status_code}')
+        return Item(href=href, etag=_etag(r), data=r.text)
 
 
-async def delete(self: DavClient, href: str, etag: str | None) -> None:
-    await _write(self, 'DELETE', href, headers={'If-Match': etag} if etag else {})
+    async def put(self, href: str, ics: str, etag: str | None) -> str | None:
+        """Écrit une ressource. etag=None : création (If-None-Match: *) ; sinon remplacement si inchangée (If-Match)."""
+        h = {'Content-Type': 'text/calendar; charset=utf-8', **({'If-Match': etag} if etag else {'If-None-Match': '*'})}
+        r = await self._write('PUT', href, body=ics.encode(), headers=h)
+        return _etag(r)
 
 
-def _xml(s: str) -> str:
-    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    async def delete(self, href: str, etag: str | None) -> None:
+        await self._write('DELETE', href, headers={'If-Match': etag} if etag else {})
 
 
-async def mkcalendar(self: DavClient, href: str, name: str, color: str, comps=('VEVENT', 'VTODO')) -> None:
-    comp_xml = ''.join(f'<c:comp name="{c}"/>' for c in comps)
-    body = (f'<?xml version="1.0" encoding="utf-8"?><c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" '
-            f'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:displayname>{_xml(name)}</d:displayname>'
-            f'<ic:calendar-color>{_xml(color)}</ic:calendar-color><c:supported-calendar-component-set>'
-            f'{comp_xml}</c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>')
-    r = await _write(self, 'MKCALENDAR', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
-    del r
+    async def mkcalendar(self, href: str, name: str, color: str, comps=('VEVENT', 'VTODO')) -> None:
+        comp_xml = ''.join(f'<c:comp name="{c}"/>' for c in comps)
+        body = (f'<?xml version="1.0" encoding="utf-8"?><c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" '
+                f'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:displayname>{_xml(name)}</d:displayname>'
+                f'<ic:calendar-color>{_xml(color)}</ic:calendar-color><c:supported-calendar-component-set>'
+                f'{comp_xml}</c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>')
+        r = await self._write('MKCALENDAR', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
+        del r
 
 
-async def mksubscribed(self: DavClient, href: str, name: str, color: str, source: str) -> None:
-    """Abonnement iCal gardé dans Radicale (comme le fait son interface web) : collection CS:subscribed + CS:source."""
-    body = ('<?xml version="1.0" encoding="utf-8"?><d:mkcol xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" '
-            'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:resourcetype><d:collection/><cs:subscribed/></d:resourcetype>'
-            f'<d:displayname>{_xml(name)}</d:displayname><ic:calendar-color>{_xml(color)}</ic:calendar-color>'
-            f'<cs:source>{_xml(source)}</cs:source></d:prop></d:set></d:mkcol>')
-    await _write(self, 'MKCOL', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
+    async def mksubscribed(self, href: str, name: str, color: str, source: str) -> None:
+        """Abonnement iCal gardé dans Radicale (comme le fait son interface web) : collection CS:subscribed + CS:source."""
+        body = ('<?xml version="1.0" encoding="utf-8"?><d:mkcol xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" '
+                'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:resourcetype><d:collection/><cs:subscribed/></d:resourcetype>'
+                f'<d:displayname>{_xml(name)}</d:displayname><ic:calendar-color>{_xml(color)}</ic:calendar-color>'
+                f'<cs:source>{_xml(source)}</cs:source></d:prop></d:set></d:mkcol>')
+        await self._write('MKCOL', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
 
 
-async def proppatch(self: DavClient, href: str, name: str | None = None, color: str | None = None, source: str | None = None) -> None:
-    props = (f'<d:displayname>{_xml(name)}</d:displayname>' if name is not None else '') + \
-            (f'<ic:calendar-color>{_xml(color)}</ic:calendar-color>' if color is not None else '') + \
-            (f'<cs:source>{_xml(source)}</cs:source>' if source is not None else '')
-    if not props:
-        return
-    body = (f'<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:" xmlns:ic="http://apple.com/ns/ical/" '
-            f'xmlns:cs="http://calendarserver.org/ns/">'
-            f'<d:set><d:prop>{props}</d:prop></d:set></d:propertyupdate>')
-    r = await _write(self, 'PROPPATCH', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(207,))
-    if '200' not in r.text and 'HTTP/1.1 2' not in r.text:
-        raise DavError(f'PROPPATCH {href} refusé')
-
-
-DavClient.get = get
-DavClient.put = put
-DavClient.delete = delete
-DavClient.mkcalendar = mkcalendar
-DavClient.mksubscribed = mksubscribed
-DavClient.proppatch = proppatch
+    async def proppatch(self, href: str, name: str | None = None, color: str | None = None, source: str | None = None) -> None:
+        props = (f'<d:displayname>{_xml(name)}</d:displayname>' if name is not None else '') + \
+                (f'<ic:calendar-color>{_xml(color)}</ic:calendar-color>' if color is not None else '') + \
+                (f'<cs:source>{_xml(source)}</cs:source>' if source is not None else '')
+        if not props:
+            return
+        body = (f'<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:" xmlns:ic="http://apple.com/ns/ical/" '
+                f'xmlns:cs="http://calendarserver.org/ns/">'
+                f'<d:set><d:prop>{props}</d:prop></d:set></d:propertyupdate>')
+        r = await self._write('PROPPATCH', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(207,))
+        if '200' not in r.text and 'HTTP/1.1 2' not in r.text:
+            raise DavError(f'PROPPATCH {href} refusé')

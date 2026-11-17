@@ -1,0 +1,27 @@
+# Agenda — interface web pour Radicale (code : ~/projets/agenda, image : ghcr.io/chewbacca-368/agenda)
+# Mise à jour : docker compose pull && docker compose up -d   (ou « Mettre à jour » dans Dockge)
+services:
+  agenda:
+    image: ${AGENDA_IMAGE:-ghcr.io/chewbacca-368/agenda:latest}
+    container_name: agenda
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    env_file:
+      - /home/quentin/docker/agenda/.env
+    environment:
+      - TZ=Europe/Paris
+    user: "1000:1000"
+    read_only: true                  # rien n'est écrit dans le conteneur (identifiants gardés en mémoire seulement)
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - radicale
+
+networks:
+  radicale:
+    external: true
+    name: test-radicale_default      # le réseau de la pile Radicale : l'agenda appelle http://radicale:5232/

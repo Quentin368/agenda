@@ -157,7 +157,10 @@ async function sync(n = UNDO.length) {
     const why = r.status === 409 ? ['Modifié ailleurs entre-temps', 'rien n’a été écrasé : voici la version de Radicale']
       : r.status === 422 ? ['Modification refusée', (r.body && r.body.error && r.body.error.refused) || 'donnée invalide']
       : ['Radicale injoignable', 'modification non enregistrée'];
-    await loadData({ force: true });
+    // On recharge la version de Radicale ; si même ça échoue, on remet l'écran dans le dernier état connu du
+    // serveur : ce qui n'a pas été enregistré ne doit pas rester affiché (ni repartir plus tard en douce).
+    if (!(await loadData({ force: true }))) applyServer(SERVER.data);
+    UNDO.length = 0; REDO.length = 0;
     toast(why[0], null, why[1]);
   }
   if (PENDING) { PENDING = false; sync(); }

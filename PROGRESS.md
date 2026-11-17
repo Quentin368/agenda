@@ -1,8 +1,10 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 4 validée** (17/11/2026) et envoyée sur GitHub ; conteneur sur l'image ghcr.io, verrou d'écriture
-toujours actif. **Prochaine étape : phase 5** (revues, README, bascule sur les vrais calendriers avec accord).
+**Phase 5 en cours** (17/11/2026) : revues faites et corrigées, README écrit, sauvegarde quotidienne en place.
+Conteneur sur l'image construite sur le Pi (`AGENDA_IMAGE=agenda:dev`, temporaire), verrou encore actif.
+**Reste : validation, puis bascule sur les vrais calendriers sur « go » explicite** (sauvegarde fraîche →
+`WRITABLE_CALENDARS=*` → suppression des calendriers `dev-…` avec accord).
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
@@ -116,8 +118,24 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   abonnements, désabonnement, arrêt d'abonnement, import, proxy). `tools/e2e_navigateur.py` : 29/29 (dont
   échéance faite/annulée, abonnement lu par le serveur et gardé dans Radicale, import, rechargement de la page).
 
+### Phase 5 — Finitions
+- **Revue de sécurité**, corrigé : liens d'abonnement limités aux adresses publiques (vérifiées à chaque
+  redirection ; refuse réseau local, conteneurs, localhost, Tailscale, IPv6 locale, métadonnées cloud) ; taille des
+  requêtes limitée (16 Ko connexion, 20 Mo sinon → 413) ; jeton CSRF comparé en temps constant ; CSP
+  `connect-src 'self'` ; uvicorn `--no-proxy-headers` ; mémoires bornées (compteur d'essais, corbeille des
+  calendriers, cache des liens).
+- **Revue de code**, corrigé : méthodes d'écriture CalDAV rangées dans la classe ; après un échec d'envoi ET de
+  rechargement, l'écran revient à l'état du serveur (plus de modification affichée non enregistrée).
+- `README.md` (fr) : fonctionnement, installation, réglages, mise à jour et retour arrière, sauvegarde et
+  restauration, dépannage, développement, sécurité.
+- `deploy/` : modèle `compose.yaml`, `.env.example` commenté, `sauvegarde.sh`.
+- **Sauvegarde quotidienne** : `~/docker/agenda/sauvegarde.sh` (data + config de Radicale → `~/docker/agenda/
+  sauvegardes`, 14 gardées, chmod 600) via la crontab de quentin à 3 h ; première archive faite le 17/11.
+- Tests : 122 pytest ; navigateur 29/29.
+
 ## Reste à faire
-- Phase 5 — Finitions (revues, README, bascule sur les vrais calendriers).
+- Bascule sur les vrais calendriers (sur « go »), puis suppression des calendriers de test `dev-…`
+  (dont `dev-echeances`, invisible dans l'agenda : à supprimer depuis l'interface web de Radicale ou AgenDAV).
 
 ## Problèmes connus
 - **Largeur de la colonne des heures (vues Jour/Semaine) : ±2 px selon le moment où les polices finissent de
@@ -137,8 +155,10 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   session ; après rechargement de la page, seul ce que la source publie encore est affiché.
 - Import d'une répétition que l'agenda ne sait pas suivre : la maquette n'en montre que la première date, mais le
   fichier entier est enregistré ; après rechargement, toutes les dates apparaissent (occurrences calculées).
-- `/api/ics` lit n'importe quelle adresse http(s), y compris du réseau local : à examiner en revue de sécurité
-  (phase 5).
+- Résolution DNS puis connexion pour les liens d'abonnement : un nom qui changerait d'adresse entre les deux
+  (« DNS rebinding ») pourrait passer ; risque faible (il faut être connecté pour ajouter un lien).
+- Deux onglets ouverts en même temps partagent la même session serveur : sans danger, mais un conflit entre eux
+  se règle par le message « Modifié ailleurs » et un rechargement.
 - Chromium sans fenêtre sur le Pi : il faut `--password-store=basic`, sinon il attend indéfiniment le trousseau
   système avant toute requête http (c'était la cause des blocages des phases 1 et 2).
 
