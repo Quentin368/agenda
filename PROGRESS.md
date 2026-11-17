@@ -12,6 +12,9 @@ navigateur 32/32. **Validé le 17/11/2026** (cours de MGF visibles dans AgenDAV)
 Ajout : **favicon** = icônes fournies par Quentin (`static/favicon.svg`, `favicon.ico`) + PNG dérivés
 (`favicon-32.png`, `apple-touch-icon.png`) ; adresse versionnée `?v=4` dans `index.html` (à incrémenter si l'icône
 change, les navigateurs la gardent longtemps en mémoire). Validé le 17/11/2026.
+Ajout : **nombre d'événements par calendrier** dans la barre latérale (`calCount()` dans `app.js`, une série compte
+une fois, y compris une série « spéciale » envoyée occurrence par occurrence ; s'efface au survol pour le bouton
+« … »). Validé le 17/11/2026.
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
