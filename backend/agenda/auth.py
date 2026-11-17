@@ -27,6 +27,8 @@ class Session:
     meta_cals: dict = field(default_factory=dict)
     trash: dict = field(default_factory=dict)
     trash_cals: dict = field(default_factory=dict)
+    meta_dues: dict = field(default_factory=dict)
+    tasks_href: str | None = None
 
     def __repr__(self) -> str:  # jamais le mot de passe dans un journal
         return f'Session(user={self.user!r}, remember={self.remember})'

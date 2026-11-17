@@ -18,6 +18,10 @@ from .changes import Applier, Refused
 from .dav import TIMEOUT, AuthError, Conflict, DavClient, DavError
 from .ical_write import Unsupported
 from .ical_read import Reader, calendar_id
+from .ical_todo import read_todo
+from .ics_fetch import IcsError, fetch_ics
+
+TASKS = 'echeances'               # collection des échéances (préfixée « dev- » pendant les essais)
 
 log = logging.getLogger('agenda')
 COOKIE = 'agenda_sid'
@@ -137,18 +141,33 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
         client = dav(s.user, s.password)
         try:
             s.home = s.home or await client.home()
-            cols = [c for c in await client.collections(s.home) if 'VEVENT' in c.components]
+            allc = await client.collections(s.home)
+            cols = [c for c in allc if c.kind == 'calendar' and 'VEVENT' in c.components]
+            subs = [c for c in allc if c.kind == 'subscribed' and c.source]
+            tasks = next((c for c in allc if c.kind == 'calendar' and c.components == ['VTODO'] and c.name == cfg.cal_prefix + TASKS), None)
             items = await client.all_events(cols)
+            todo_items = await client.all_items(tasks.href) if tasks else []
         except AuthError:            # mot de passe changé entre-temps : on déconnecte
             sessions.delete(s.sid)
             raise HTTPException(401, 'identifiants refusés')
         except DavError as e:
             log.error('lecture Radicale impossible : %s', e)
             raise HTTPException(502, 'Radicale injoignable')
-        out = build_data(cols, items, cfg.timezone, cfg)
+        out = build_data(cols, items, cfg.timezone, cfg, subs=subs, tasks=tasks, todo_items=todo_items)
         s.meta_events = {k: dict(v) for k, v in out['meta']['events'].items()}
         s.meta_cals = {k: dict(v) for k, v in out['meta']['calendars'].items()}
+        s.meta_dues = {k: dict(v) for k, v in out['meta']['dues'].items()}
+        s.tasks_href = tasks.href if tasks else None
         return out
+
+    @app.get('/api/ics')
+    async def ics(url: str, s: Session = Depends(current)):
+        """Lit le lien d'un abonnement à la place du navigateur (pas de blocage CORS), avec un cache court."""
+        try:
+            text = await fetch_ics(url)
+        except IcsError as e:
+            raise HTTPException(502, str(e))
+        return Response(text, media_type='text/calendar; charset=utf-8')
 
     @app.post('/api/changes')
     async def changes(body: dict, s: Session = Depends(current_csrf)):
@@ -193,16 +212,20 @@ def _sort_key(name: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', name.casefold()) if not unicodedata.combining(c))
 
 
-def build_data(cols, items, tz: str, cfg: Settings | None = None) -> dict:
+def build_data(cols, items, tz: str, cfg: Settings | None = None, subs=(), tasks=None, todo_items=()) -> dict:
     """Collections + ressources Radicale → { calendars, events, dues, meta, errors } au format de la maquette."""
     reader = Reader(tz)
     calendars, events, meta_ev, meta_cal, errors = [], [], {}, {}, []
-    for c in sorted(cols, key=lambda c: _sort_key(c.displayname or c.name)):
+    writable = lambda name: bool(cfg and cfg.writable(name))
+    for c in sorted([*cols, *subs], key=lambda c: _sort_key(c.displayname or c.name)):
         cid = calendar_id(c.name)
         if cid in meta_cal:          # deux collections au même nom réduit : on garde la première
             continue
-        calendars.append({'id': cid, 'name': c.displayname or c.name, 'color': palette.nearest(c.color), 'visible': True})
-        meta_cal[cid] = {'href': c.href, 'ctag': c.ctag, 'colorHex': c.color, 'writable': bool(cfg and cfg.writable(c.name))}
+        cal = {'id': cid, 'name': c.displayname or c.name, 'color': palette.nearest(c.color), 'visible': True}
+        if c.kind == 'subscribed':   # abonnement : les événements sont lus par l'interface via /api/ics
+            cal['sub'] = {'url': c.source, 'at': None, 'n': 0, 'err': None}
+        calendars.append(cal)
+        meta_cal[cid] = {'href': c.href, 'ctag': c.ctag, 'colorHex': c.color, 'writable': writable(c.name), 'kind': c.kind}
     by_href = {meta_cal[k]['href']: k for k in meta_cal}
     for c in cols:
         cid = by_href.get(c.href)
@@ -217,7 +240,22 @@ def build_data(cols, items, tz: str, cfg: Settings | None = None) -> dict:
                 continue
             events.extend(res.events)
             meta_ev.update(res.meta)
-    return {'calendars': calendars, 'events': events, 'dues': [], 'meta': {'events': meta_ev, 'calendars': meta_cal}, 'errors': errors}
+    uid_to_id = {m['uid']: i for i, m in meta_ev.items() if m.get('kind') in ('single', 'series')}
+    dues, meta_due = [], {}
+    for it in todo_items:
+        try:
+            d = read_todo(it.data, tz, uid_to_id)
+        except Exception as e:
+            log.warning('tâche illisible %s : %s', it.href, e)
+            errors.append({'href': it.href, 'error': type(e).__name__})
+            continue
+        if d:
+            dues.append(d)
+            meta_due[d['id']] = {'href': it.href, 'etag': it.etag}
+    return {'calendars': calendars, 'events': events, 'dues': dues,
+            'meta': {'events': meta_ev, 'calendars': meta_cal, 'dues': meta_due,
+                     'tasks': {'writable': writable(((cfg.cal_prefix if cfg else '') + TASKS))}},
+            'errors': errors}
 
 
 app = create_app()

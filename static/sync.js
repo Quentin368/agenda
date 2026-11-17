@@ -2,11 +2,13 @@
    Radicale reste l'unique source de vérité. L'interface garde le « dernier état connu du serveur » (SERVER) ;
    après chaque modification (refreshData → onDataChanged), elle compare S à cet état et envoie la différence
    (créations / modifications / suppressions). « Annuler » restaure un instantané : la différence repart d'elle-même.
-   Ne comptent pas : la visibilité des calendriers (préférence locale) et les abonnements (jamais écrits dans Radicale).
+   Ne comptent pas : la visibilité des calendriers (préférence locale) et les ÉVÉNEMENTS des abonnements (relus du lien,
+   jamais écrits) ; la liste des abonnements (nom, couleur, adresse), elle, est gardée dans Radicale.
    En cas de conflit (modifié ailleurs) ou de refus, rien n'est écrasé : message, puis rechargement depuis Radicale. */
 const API = { user: null, csrf: null };
 let CAL_PREFIX = '';                                 // imposé par le serveur aux nouveaux calendriers (« dev- » pendant les essais)
 let SENDING = false, PENDING = false;
+const IMPORT_RAW = new Map();                        // id → iCal brut d'un événement importé (gardé en entier dans Radicale)
 let SERVER = null;                                  // { data, canon } : dernières données reçues du serveur
 let SRV_META = { events: {}, calendars: {} };       // ressource, ETag, UID… de chaque événement (hors de S : une copie ne les emporte pas)
 let APPLYING = false, LOADING = false;
@@ -25,13 +27,10 @@ async function api(path, opts = {}) {
 /* Forme comparable (clés triées) : seulement ce qui vit dans Radicale */
 const sortKeys = v => Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object'
   ? Object.fromEntries(Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => [k, sortKeys(v[k])])) : v;
+const calShape = c => ({ id: c.id, name: c.name, color: c.color, ...(c.sub ? { sub: c.sub.url } : {}) });
 function canon(cals, evs, dues) {
   const sub = new Set(cals.filter(c => c.sub).map(c => c.id));
-  return JSON.stringify(sortKeys({
-    c: cals.filter(c => !c.sub).map(({ visible, ...c }) => c),
-    e: evs.filter(e => !sub.has(e.cal)),
-    d: dues
-  }));
+  return JSON.stringify(sortKeys({ c: cals.map(calShape), e: evs.filter(e => !sub.has(e.cal)), d: dues }));
 }
 const canonState = () => canon(S.calendars, S.events, S.dues);
 const clone = v => JSON.parse(JSON.stringify(v));
@@ -40,14 +39,21 @@ const canonData = d => canon(d.calendars, d.events.map(e => norm(clone(e))), d.d
 /* Met les données du serveur dans S : la visibilité choisie et les abonnements restent tels quels */
 function applyServer(data) {
   const vis = new Map(S.calendars.map(c => [c.id, c.visible]));
-  const subs = S.calendars.filter(c => c.sub), subIds = new Set(subs.map(c => c.id));
+  const was = new Map(S.calendars.filter(c => c.sub).map(c => [c.id, c]));
+  const cals = clone(data.calendars).map(c => {
+    const old = was.get(c.id);
+    if (c.sub && old && old.sub.url === c.sub.url) c.sub = { ...old.sub };   // déjà lu : on garde son état
+    return { ...c, visible: vis.has(c.id) ? vis.get(c.id) : true };
+  });
+  const subIds = new Set(cals.filter(c => c.sub && was.has(c.id) && was.get(c.id).sub.url === c.sub.url).map(c => c.id));
   const subEvs = S.events.filter(e => subIds.has(e.cal));
-  S.calendars = [...clone(data.calendars).map(c => ({ ...c, visible: vis.has(c.id) ? vis.get(c.id) : true })), ...subs];
+  S.calendars = cals;
   S.events = [...clone(data.events).map(norm), ...subEvs];
   S.dues = clone(data.dues || []);
   SERVER = { data, canon: canonData(data) };
   SRV_META = data.meta || { events: {}, calendars: {} };
   APPLYING = true; try { refreshData(); } finally { APPLYING = false; }
+  if (S.calendars.some(c => c.sub && !c.sub.at) && !$('app').hidden) setTimeout(() => syncSubs(), 0);   // abonnements à lire
 }
 
 /* Après chaque refreshData() : une modification de l'utilisateur ? → envoyée (après la fin de l'action en cours) */
@@ -70,21 +76,22 @@ const same = (a, b) => JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b
 /* Ce qui a changé entre l'état du serveur et S */
 function diff() {
   const subIds = new Set(S.calendars.filter(c => c.sub).map(c => c.id));
-  const cals = S.calendars.filter(c => !c.sub).map(({ visible, ...c }) => clone(c));
+  const cals = S.calendars.map(c => clone(calShape(c)));
   const evs = S.events.filter(e => !subIds.has(e.cal)).map(clone);
-  const sc = new Map(SERVER.data.calendars.map(({ visible, ...c }) => [c.id, c]));
+  const sc = new Map(SERVER.data.calendars.map(c => [c.id, calShape(c)]));
   const se = new Map(SERVER.data.events.map(e => [e.id, norm(clone(e))]));
   const nowC = new Map(cals.map(c => [c.id, c])), nowE = new Map(evs.map(e => [e.id, e]));
   const out = { calendars: { create: [], update: [], delete: [] }, events: [] };
+  const shape = ({ id, ...c }) => c;
   for (const c of cals) {
     const b = sc.get(c.id);
-    if (!b) out.calendars.create.push({ id: c.id, name: c.name, color: c.color });
-    else if (b.name !== c.name || b.color !== c.color) out.calendars.update.push({ id: c.id, before: { name: b.name, color: b.color }, after: { name: c.name, color: c.color } });
+    if (!b) out.calendars.create.push(c);
+    else if (!same(b, c)) out.calendars.update.push({ id: c.id, before: shape(b), after: shape(c) });
   }
   for (const id of sc.keys()) if (!nowC.has(id)) out.calendars.delete.push({ id });
   for (const e of evs) {
     const b = se.get(e.id);
-    if (!b) out.events.push({ op: 'create', id: e.id, after: e });
+    if (!b) out.events.push({ op: 'create', id: e.id, after: e, ...(IMPORT_RAW.has(e.id) ? { raw: IMPORT_RAW.get(e.id) } : {}) });
     else if (!same(b, e)) out.events.push({ op: 'update', id: e.id, before: b, after: e });
   }
   for (const [id, b] of se) if (!nowE.has(id)) out.events.push({ op: 'delete', id, before: b });
@@ -95,8 +102,17 @@ function diff() {
   const singles = out.events.filter(c => c.op === 'create' && !rec(c.after));
   if (added.length === 1 && singles.length === 1 && singles[0].after.cal === added[0].c.after.cal)
     singles[0].overrideOf = { series: added[0].c.id, day: added[0].days[0], seriesModel: added[0].c.before };
-  const empty = !out.events.length && !out.calendars.create.length && !out.calendars.update.length && !out.calendars.delete.length;
-  return { batch: out, empty, target: { calendars: cals, events: evs }, duesChanged: !same(S.dues, SERVER.data.dues || []) };
+  // Échéances : tâches VTODO ; « evUid » = l'UID d'un cours d'abonnement (le serveur connaît les autres)
+  out.dues = [];
+  const sd = new Map((SERVER.data.dues || []).map(d => [d.id, d])), nd = new Map(S.dues.map(d => [d.id, clone(d)]));
+  for (const [id, d] of nd) {
+    const b = sd.get(id), evUid = getEv(d.ev)?.icsUid;
+    if (!b) out.dues.push({ op: 'create', id, after: { ...d, ...(evUid ? { evUid } : {}) } });
+    else if (!same(b, d)) out.dues.push({ op: 'update', id, before: b, after: { ...d, ...(evUid ? { evUid } : {}) } });
+  }
+  for (const [id, b] of sd) if (!nd.has(id)) out.dues.push({ op: 'delete', id, before: b });
+  const empty = !out.events.length && !out.dues.length && !out.calendars.create.length && !out.calendars.update.length && !out.calendars.delete.length;
+  return { batch: out, empty, target: { calendars: S.calendars.map(clone).map(({ visible, ...c }) => c), events: evs, dues: [...nd.values()] } };
 }
 
 function writable(calId, batch) {
@@ -108,8 +124,9 @@ async function sync(n = UNDO.length) {
   if (!SERVER || APPLYING) return;
   if (SENDING) { PENDING = true; return; }
   const d = diff();
-  if (d.duesChanged) return refuse(n, 'Échéances : bientôt', 'leur enregistrement dans Radicale arrive à la prochaine étape');
   if (d.empty) return;
+  if (d.batch.dues.length && !(SRV_META.tasks || {}).writable)
+    return refuse(n, 'Échéances en lecture seule', 'le calendrier des tâches n’est pas modifiable');
   const touched = new Set([...d.batch.calendars.update, ...d.batch.calendars.delete].map(c => c.id));
   d.batch.events.forEach(c => [c.before, c.after].forEach(e => e && touched.add(e.cal)));
   const locked = [...touched].filter(id => !writable(id, d.batch));
@@ -126,9 +143,11 @@ async function sync(n = UNDO.length) {
   if (r.ok) {
     const removed = new Set(r.body.removed || []);
     d.target.events = d.target.events.filter(e => !removed.has(e.id));
-    SERVER.data = { ...SERVER.data, calendars: d.target.calendars, events: d.target.events };
+    SERVER.data = { ...SERVER.data, calendars: d.target.calendars.map(c => ({ ...c, visible: true })), events: d.target.events, dues: d.target.dues };
+    d.batch.events.forEach(c => IMPORT_RAW.delete(c.id));
     SERVER.canon = canonData(SERVER.data);
-    d.batch.calendars.create.forEach(c => { SRV_META.calendars[c.id] = { writable: true }; });
+    d.batch.calendars.create.forEach(c => { SRV_META.calendars[c.id] = { writable: true, kind: c.sub ? 'subscribed' : 'calendar' }; });
+    d.batch.calendars.update.filter(c => c.before.sub && !c.after.sub).forEach(c => { SRV_META.calendars[c.id] = { writable: true, kind: 'calendar' }; });
     d.batch.events.filter(c => c.op === 'create').forEach(c => { SRV_META.events[c.id] = { kind: c.overrideOf ? 'override' : rec(c.after) ? 'series' : 'single' }; });
     if (removed.size && S.events.some(e => removed.has(e.id))) {   // occurrences parties avec leur série
       S.events = S.events.filter(e => !removed.has(e.id));

@@ -263,6 +263,39 @@ class Writer:
         cal.add_component(ev)
         return self.finish(cal)
 
+    def import_resource(self, uid: str, raw: dict, model: dict) -> str:
+        """Événement importé d'un fichier .ics : son VEVENT tel quel (participants, alarmes, X-*…), avec un UID neuf
+        (l'id de l'agenda ; l'UID d'origine est gardé en X-AGENDA-ICSUID pour reconnaître un réimport), puis les
+        choix faits dans l'agenda (calendrier, rappel…) appliqués comme une modification."""
+        from .ical_read import Reader
+        cal = icalendar.Calendar()
+        cal.add('VERSION', '2.0')
+        cal.add('PRODID', PRODID)
+        used = set()
+        for tz_text in raw.get('vtimezones') or []:
+            tzc = icalendar.Timezone.from_ical(tz_text)
+            if str(tzc.get('TZID')) not in used:
+                used.add(str(tzc.get('TZID')))
+                cal.add_component(tzc)
+        ev = icalendar.Event.from_ical(raw['vevent'])
+        if not isinstance(ev, icalendar.Event):
+            raise Unsupported('le fichier importé ne contient pas un événement')
+        original = str(ev.get('UID') or '')
+        _set(ev, 'UID', uid)
+        _del(ev, 'RECURRENCE-ID')
+        if original:
+            _set(ev, 'X-AGENDA-ICSUID', vText(original))
+        cal.add_component(ev)
+        before = Reader(self.tz.key).read_resource(cal.to_ical().decode(), model['cal'], '', None).events
+        if before and before[0]['id'] == uid:
+            b = {**before[0]}
+            b.pop('repNote', None)
+            after = {k: v for k, v in model.items() if k not in ('icsUid', 'repNote')}
+            self.patch(ev, b, {**b, **after})
+        else:                       # répétition que l'agenda ne sait pas suivre : gardée telle quelle
+            self.patch(ev, {}, {k: model[k] for k in ('rem',) if k in model})
+        return self.finish(cal)
+
     def finish(self, cal) -> str:
         """Sérialise ; ajoute la définition de Paris si une date y fait référence et qu'elle manque."""
         text = cal.to_ical().decode()

@@ -31,6 +31,8 @@ class Collection:
     color: str | None
     components: list[str]
     ctag: str | None
+    kind: str = 'calendar'          # 'calendar' ou 'subscribed' (abonnement iCal, CS:subscribed)
+    source: str | None = None       # adresse de l'abonnement
 
 
 @dataclass
@@ -135,23 +137,33 @@ class DavClient:
     async def collections(self, home: str | None = None) -> list[Collection]:
         home = home or await self.home()
         r = await self._request('PROPFIND', home, _propfind_body(
-            'd:resourcetype', 'd:displayname', 'ic:calendar-color', 'c:supported-calendar-component-set', 'cs:getctag', 'd:sync-token'), depth='1')
+            'd:resourcetype', 'd:displayname', 'ic:calendar-color', 'c:supported-calendar-component-set', 'cs:getctag', 'd:sync-token',
+            'cs:source'), depth='1')
         out = []
         for href, props in _responses(r.content):
             rt = props.get(_q('d', 'resourcetype'))
-            if rt is None or rt.find('c:calendar', NS) is None:
+            if rt is None:
                 continue
+            kind = 'calendar' if rt.find('c:calendar', NS) is not None else 'subscribed' if rt.find('cs:subscribed', NS) is not None else None
+            if kind is None:
+                continue
+            src_el = props.get(_q('cs', 'source'))
+            source = None
+            if src_el is not None:
+                source = (src_el.findtext('d:href', namespaces=NS) or src_el.text or '').strip() or None
             path = urlsplit(href).path
             name = path.rstrip('/').rsplit('/', 1)[-1]
             comp_el = props.get(_q('c', 'supported-calendar-component-set'))
-            comps = [c.get('name', '').upper() for c in comp_el.findall('c:comp', NS)] if comp_el is not None else ['VEVENT', 'VTODO']
+            comps = [c.get('name', '').upper() for c in comp_el.findall('c:comp', NS)] if comp_el is not None else \
+                (['VEVENT', 'VTODO'] if kind == 'calendar' else [])
             dn = props.get(_q('d', 'displayname'))
             col = props.get(_q('ic', 'calendar-color'))
             ctag = props.get(_q('cs', 'getctag'))
             st = props.get(_q('d', 'sync-token'))
             out.append(Collection(href=path, name=name, displayname=(dn.text or '').strip() if dn is not None else '',
                                   color=(col.text or '').strip() or None if col is not None else None, components=comps,
-                                  ctag=(ctag.text if ctag is not None else None) or (st.text if st is not None else None)))
+                                  ctag=(ctag.text if ctag is not None else None) or (st.text if st is not None else None),
+                                  kind=kind, source=source))
         return out
 
     async def all_items(self, collection_href: str) -> list[Item]:
@@ -233,21 +245,33 @@ def _xml(s: str) -> str:
     return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-async def mkcalendar(self: DavClient, href: str, name: str, color: str) -> None:
+async def mkcalendar(self: DavClient, href: str, name: str, color: str, comps=('VEVENT', 'VTODO')) -> None:
+    comp_xml = ''.join(f'<c:comp name="{c}"/>' for c in comps)
     body = (f'<?xml version="1.0" encoding="utf-8"?><c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" '
             f'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:displayname>{_xml(name)}</d:displayname>'
             f'<ic:calendar-color>{_xml(color)}</ic:calendar-color><c:supported-calendar-component-set>'
-            f'<c:comp name="VEVENT"/><c:comp name="VTODO"/></c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>')
+            f'{comp_xml}</c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>')
     r = await _write(self, 'MKCALENDAR', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
     del r
 
 
-async def proppatch(self: DavClient, href: str, name: str | None = None, color: str | None = None) -> None:
+async def mksubscribed(self: DavClient, href: str, name: str, color: str, source: str) -> None:
+    """Abonnement iCal gardé dans Radicale (comme le fait son interface web) : collection CS:subscribed + CS:source."""
+    body = ('<?xml version="1.0" encoding="utf-8"?><d:mkcol xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" '
+            'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:resourcetype><d:collection/><cs:subscribed/></d:resourcetype>'
+            f'<d:displayname>{_xml(name)}</d:displayname><ic:calendar-color>{_xml(color)}</ic:calendar-color>'
+            f'<cs:source>{_xml(source)}</cs:source></d:prop></d:set></d:mkcol>')
+    await _write(self, 'MKCOL', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
+
+
+async def proppatch(self: DavClient, href: str, name: str | None = None, color: str | None = None, source: str | None = None) -> None:
     props = (f'<d:displayname>{_xml(name)}</d:displayname>' if name is not None else '') + \
-            (f'<ic:calendar-color>{_xml(color)}</ic:calendar-color>' if color is not None else '')
+            (f'<ic:calendar-color>{_xml(color)}</ic:calendar-color>' if color is not None else '') + \
+            (f'<cs:source>{_xml(source)}</cs:source>' if source is not None else '')
     if not props:
         return
-    body = (f'<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:" xmlns:ic="http://apple.com/ns/ical/">'
+    body = (f'<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:" xmlns:ic="http://apple.com/ns/ical/" '
+            f'xmlns:cs="http://calendarserver.org/ns/">'
             f'<d:set><d:prop>{props}</d:prop></d:set></d:propertyupdate>')
     r = await _write(self, 'PROPPATCH', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(207,))
     if '200' not in r.text and 'HTTP/1.1 2' not in r.text:
@@ -258,4 +282,5 @@ DavClient.get = get
 DavClient.put = put
 DavClient.delete = delete
 DavClient.mkcalendar = mkcalendar
+DavClient.mksubscribed = mksubscribed
 DavClient.proppatch = proppatch

@@ -27,6 +27,14 @@ mkcalendar(URL, f'{USER}/dev-agenda/', 'dev-agenda', '#13747f'); mkcalendar(URL,
 put(URL, f'{USER}/perso/p.ics', 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//t//FR\nBEGIN:VEVENT\nUID:perso-1\nDTSTART;TZID=Europe/Paris:20261118T180000\nDTEND;TZID=Europe/Paris:20261118T190000\nSUMMARY:Ciné (test)\nEND:VEVENT\nEND:VCALENDAR\n')
 put(URL, f'{USER}/dev-agenda/serie.ics', 'BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Telephone//FR\nBEGIN:VEVENT\nUID:serie-1\nDTSTART;TZID=Europe/Paris:20261116T090000\nDTEND;TZID=Europe/Paris:20261116T100000\nRRULE:FREQ=WEEKLY;BYDAY=MO\nSUMMARY:Cours\nX-INCONNU:garde-moi\nEND:VEVENT\nEND:VCALENDAR\n')
 raw = lambda p: httpx.get(URL + p, auth=(USER, PASSWORD))
+# Lien d'abonnement simulé (le serveur le « lit » sans aller sur Internet)
+FEED = ('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-WR-CALNAME:Fac\r\nBEGIN:VEVENT\r\nUID:cm-algo@fac\r\n'
+        'DTSTART;TZID=Europe/Paris:20261116T083000\r\nDTEND;TZID=Europe/Paris:20261116T103000\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\n'
+        'SUMMARY:CM Algorithmique\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n')
+import agenda.main as _main
+async def _fake_fetch(url, client=None):
+    return FEED
+_main.fetch_ics = _fake_fetch
 cfg = dataclasses.replace(Settings(), radicale_url=URL, static_dir=pathlib.Path(ROOT, 'static'), writable_calendars=('dev-agenda', 'dev-*'))
 client = TestClient(create_app(cfg), base_url='http://agenda.test'); client.__enter__()
 
@@ -127,9 +135,10 @@ async def main():
             await c.js("{ const snap = snapshot(); S.calendars.push({ id: uid('c'), name: 'Projets', color: 'olive', visible: true }); refreshData(); toast('Calendrier créé', snap); } true"); await settle(c)
             cid = await c.js("S.calendars.find(x => x.name === 'Projets').id")
             check('calendrier créé (préfixe dev-)', cid.startswith('dev-c-') and httpx.request('PROPFIND', URL + f'{USER}/{cid}/', auth=(USER, PASSWORD), headers={'Depth': '0'}).status_code == 207, cid)
-            # 8. échéance : pas encore
+            # 8. échéance ajoutée directement dans S (comme le fait la maquette)
             await c.js("{ const snap = snapshot(); S.dues.push({ id: uid('k'), t: 'x', ev: 'serie-1', occ: '2026-11-23', title: 'Cours', start: '2026-11-23T09:00', allDay: false, cal: 'dev-agenda' }); refreshData(); toast('Échéance ajoutée', snap); } true"); await settle(c)
-            check('échéances : refusées pour l’instant', await c.js("S.dues.length === 0 && /Échéances/.test(document.querySelector('.toast').textContent)"))
+            kx = await c.js("S.dues[0].id")
+            check('échéance ajoutée directement : enregistrée', raw(f'{USER}/dev-echeances/{kx}.ics').status_code == 200)
             # 8b. vrai glisser à la souris : « Ciné » ne bouge pas (verrouillé), « Dentiste » descend d'une heure
             await c.js("cal.gotoDate('2026-11-16'); cal.changeView('timeGridWeek'); true"); await asyncio.sleep(1)
             box = await c.js(f"""(() => {{ const el = document.querySelector('.fc-event[data-occ^="{nid}@"]'); const r = el.getBoundingClientRect();
@@ -143,6 +152,37 @@ async def main():
             await settle(c, 1.5)
             r = raw(f'{USER}/dev-agenda/{nid}.ics').text
             check('glisser à la souris : nouvelle heure écrite (18:30 Paris)', 'DTSTART;TZID=Europe/Paris:20261120T183000' in r, [l for l in r.split() if l.startswith('DTSTART')])
+            # ---------- phase 4
+            # 10. échéance sur la série (fonctions de la maquette), faite, puis annulée
+            await c.js("addDue('Fiche de lecture', getEv('serie-1'), '2026-11-23'); true"); await settle(c)
+            kid = await c.js("S.dues[0]?.id")
+            r = raw(f'{USER}/dev-echeances/{kid}.ics')
+            check('échéance → tâche VTODO dans Radicale', r.status_code == 200 and 'SUMMARY:Fiche de lecture' in r.text and 'RELATED-TO:serie-1' in r.text, r.status_code)
+            await c.js(f"toggleDone('{kid}'); true"); await settle(c)
+            check('échéance faite → STATUS:COMPLETED', 'STATUS:COMPLETED' in raw(f'{USER}/dev-echeances/{kid}.ics').text)
+            await c.js("undoLast(); true"); await settle(c)
+            check('annuler → de nouveau à faire', 'STATUS:NEEDS-ACTION' in raw(f'{USER}/dev-echeances/{kid}.ics').text)
+            check('calendrier des tâches invisible', await c.js("!S.calendars.some(x => /echeances/.test(x.id))"))
+            # 11. abonnement : lu par le serveur, gardé dans Radicale, ids stables
+            await c.js("""{ const snap = snapshot(); const c = { id: uid('c'), name: 'Fac', color: 'sky', visible: true, sub: { url: 'https://fac.example/edt.ics', at: null, n: 0, err: null } };
+                 S.calendars.push(c); refreshData([c.id]); toast('Abonnement ajouté', snap); syncSubs(true); } true"""); await settle(c, 2)
+            sub = await c.js("(() => { const c = S.calendars.find(x => x.sub); return { id: c.id, n: S.events.filter(e => e.cal === c.id).length, err: c.sub.err, ev: S.events.find(e => e.cal === c.id)?.id }; })()")
+            check('abonnement lu par le serveur (pas de CORS)', sub['n'] == 1 and not sub['err'], sub)
+            pf = httpx.request('PROPFIND', URL + f"{USER}/{sub['id']}/", auth=(USER, PASSWORD), headers={'Depth': '0'})
+            check('abonnement gardé dans Radicale (CS:subscribed)', pf.status_code == 207 and 'subscribed' in pf.text and 'fac.example' in pf.text)
+            await c.js(f"addDue('Partiel', getEv('{sub['ev']}'), '2026-11-30'); true"); await settle(c)
+            # 12. import .ics : tout le contenu du fichier
+            imp = ('BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nBEGIN:VEVENT\\r\\nUID:billet-7@salle\\r\\nDTSTART;TZID=Europe/Paris:20261212T203000\\r\\n'
+                   'DTEND;TZID=Europe/Paris:20261212T230000\\r\\nSUMMARY:Concert de jazz\\r\\nURL:https://salle.example/7\\r\\nX-BILLET-PLACE:Balcon\\r\\n'
+                   'END:VEVENT\\r\\nEND:VCALENDAR\\r\\n')
+            await c.js(f"importFiles([new File(['{imp}'], 'billet.ics', {{ type: 'text/calendar' }})]).then(() => {{ IMP.cal = 'dev-agenda'; doImport(); }}); true"); await settle(c, 2)
+            iid = await c.js("S.events.find(e => e.title === 'Concert de jazz')?.id")
+            r = raw(f'{USER}/dev-agenda/{iid}.ics')
+            check('import : contenu du fichier gardé', r.status_code == 200 and 'X-BILLET-PLACE:Balcon' in r.text and 'URL:https://salle.example/7' in r.text, r.status_code)
+            # 13. rechargement de la PAGE : l'échéance qui vise le cours d'abonnement le retrouve (id stable)
+            await c('Page.reload'); await asyncio.sleep(3); await settle(c, 1)
+            again = await c.js(f"(() => {{ const d = S.dues.find(x => x.t === 'Partiel'); return d && !!getEv(d.ev) && d.ev === '{sub['ev']}'; }})()")
+            check('après rechargement : échéance liée au cours d’abonnement', again)
             # 9. rechargement : tout correspond au serveur
             await c.js("loadData().then(() => window.__r = canonState() === SERVER.canon); true"); await settle(c)
             check('après rechargement : S identique au serveur', await c.js("window.__r"))

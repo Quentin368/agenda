@@ -1,9 +1,10 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 3 validée** (17/11/2026) et envoyée sur GitHub ; conteneur sur l'image ghcr.io, verrou d'écriture actif
-(`WRITABLE_CALENDARS=dev-agenda,dev-*`). Correctif : plus de connexions gardées ouvertes vers Radicale + une nouvelle
-tentative pour les lectures (fausse erreur « injoignable » vue sur GitHub). **Prochaine étape : phase 4.**
+**Phase 4 terminée** (17/11/2026), en attente de validation : conteneur sur l'image construite sur le Pi
+(`AGENDA_IMAGE=agenda:dev` dans `.env`, temporaire), verrou d'écriture actif. Pas encore envoyée sur GitHub.
+Après validation : envoi sur GitHub, attendre le workflow, `docker compose pull`, retirer `AGENDA_IMAGE` du `.env`,
+`docker compose up -d`.
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
@@ -96,8 +97,28 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   Nouveau `tools/e2e_navigateur.py` : vrai Chromium ⇄ vrai backend ⇄ Radicale jetable, 21/21 (dont un vrai
   glisser-déposer à la souris).
 
+### Phase 4 — Spécificités
+- **Échéances ⇄ VTODO** (`ical_todo.py`) dans un calendrier de tâches `echeances` (`dev-echeances` pendant les essais),
+  créé à la première échéance, invisible dans la liste : SUMMARY, DUE, RELATED-TO (vrai UID de l'événement),
+  X-AGENDA-EV / -OCC / -EV-TITLE / -EV-CAL, STATUS/COMPLETED/PERCENT-COMPLETE ; une tâche cochée sur le téléphone
+  apparaît « faite » ; une tâche ordinaire (sans lien avec un événement) est ignorée et laissée telle quelle.
+  Modification = seuls les champs changés ; suppression → corbeille, « Annuler » la remet à l'identique.
+- **Abonnements** : la liste est gardée dans Radicale (collections `CS:subscribed` + `CS:source`), créées /
+  renommées / recolorées / supprimées depuis l'agenda ; « Arrêter l'abonnement » en gardant les événements la
+  transforme en vrai calendrier. Les liens sont lus par le serveur (`GET /api/ics`, `ics_fetch.py` : http(s) et
+  webcal seulement, 10 Mo max, cache 10 min, messages d'erreur en français) — plus de blocage CORS.
+  `app.js` : `fetchICS` passe par le serveur ; les événements d'abonnement ont des ids stables (empreinte), pour
+  que les échéances qui les visent les retrouvent après rechargement.
+- **Import .ics fidèle** : `parseICS` garde le texte brut de chaque VEVENT et des VTIMEZONE ; le serveur
+  enregistre l'événement tel qu'il est dans le fichier (UID neuf = id de l'agenda, UID d'origine en
+  `X-AGENDA-ICSUID`, relu comme `icsUid` : un réimport met à jour au lieu de dupliquer), puis applique les choix
+  faits dans l'agenda (calendrier, rappel).
+- Rappels (VALARM) et anniversaires (X-AGENDA-*) : faits en phase 3.
+- **Tests** : 111 pytest (+ VTODO, import fidèle, lecture des liens, et de bout en bout : échéances,
+  abonnements, désabonnement, arrêt d'abonnement, import, proxy). `tools/e2e_navigateur.py` : 29/29 (dont
+  échéance faite/annulée, abonnement lu par le serveur et gardé dans Radicale, import, rechargement de la page).
+
 ## Reste à faire
-- Phase 4 — Spécificités (anniversaires X-AGENDA-*, VTODO, VALARM, abonnements, import .ics).
 - Phase 5 — Finitions (revues, README, bascule sur les vrais calendriers).
 
 ## Problèmes connus
@@ -114,7 +135,12 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   d'édition s'est déjà fermée, la saisie est perdue.
 - Après « cette occurrence seulement », l'occurrence garde jusqu'au prochain rechargement l'id donné par
   l'interface ; au rechargement elle prend son id définitif (`…~r…`) et l'historique « Annuler » est vidé.
-- Échéances : pas encore enregistrées (phase 4) ; les ajouter est refusé avec un message.
+- Abonnements : « le passé reste » (événements retirés de la source mais déjà passés) ne vaut que pendant la
+  session ; après rechargement de la page, seul ce que la source publie encore est affiché.
+- Import d'une répétition que l'agenda ne sait pas suivre : la maquette n'en montre que la première date, mais le
+  fichier entier est enregistré ; après rechargement, toutes les dates apparaissent (occurrences calculées).
+- `/api/ics` lit n'importe quelle adresse http(s), y compris du réseau local : à examiner en revue de sécurité
+  (phase 5).
 - Chromium sans fenêtre sur le Pi : il faut `--password-store=basic`, sinon il attend indéfiniment le trousseau
   système avant toute requête http (c'était la cause des blocages des phases 1 et 2).
 

@@ -239,3 +239,94 @@ def test_evenement_inconnu_refuse(env):
     env.data()
     r = env.send({'events': [{'op': 'delete', 'id': 'nexiste-pas', 'before': {**NEW, 'cal': env.dev}}]})
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------- phase 4 : échéances, abonnements, import
+def test_echeances_creer_faire_supprimer_annuler(env):
+    env.put(f'{USER}/{env.dev}/serie.ics', SERIE.format(uid=f'serie-k{env.dev}'))
+    d0 = env.data()
+    sid = f'serie-k{env.dev}'
+    due = {'id': 'k-0123456789ab', 't': 'Fiche de lecture', 'ev': sid, 'occ': '2026-11-23', 'title': 'Cours',
+           'start': '2026-11-23T09:00', 'allDay': False, 'cal': env.dev}
+    assert env.send({'dues': [{'op': 'create', 'id': due['id'], 'after': due}]}).json()['ok']
+    d = env.data()
+    assert due in d['dues']
+    tasks = [c for c in d['calendars'] if 'echeances' in c['id']]
+    assert tasks == []                                                    # calendrier de tâches invisible
+    raw = env.raw(f'{USER}/dev-echeances/{due["id"]}.ics').text
+    assert f'RELATED-TO:{sid}' in raw and 'X-AGENDA-OCC:2026-11-23' in raw
+    done = {**due, 'done': '2026-11-20'}
+    assert env.send({'dues': [{'op': 'update', 'id': due['id'], 'before': due, 'after': done}]}).json()['ok']
+    assert done in env.data()['dues']
+    before_del = env.raw(f'{USER}/dev-echeances/{due["id"]}.ics').text
+    assert env.send({'dues': [{'op': 'delete', 'id': due['id'], 'before': done}]}).json()['ok']
+    assert env.raw(f'{USER}/dev-echeances/{due["id"]}.ics').status_code == 404
+    assert env.send({'dues': [{'op': 'create', 'id': due['id'], 'after': done}]}).json()['ok']
+    assert env.raw(f'{USER}/dev-echeances/{due["id"]}.ics').text == before_del
+    del d0
+
+
+def test_abonnement_garde_dans_radicale_puis_arrete(env):
+    env.data()
+    sid = f'dev-c-sub{env.dev}'
+    url = 'https://example.org/fac.ics'
+    assert env.send({'calendars': {'create': [{'id': sid, 'name': 'Fac', 'color': 'sky', 'sub': url}]}}).json()['ok']
+    d = env.data()
+    cal = next(c for c in d['calendars'] if c['id'] == sid)
+    assert cal['sub']['url'] == url and cal['name'] == 'Fac' and d['meta']['calendars'][sid]['kind'] == 'subscribed'
+    pf = httpx.request('PROPFIND', env.url + f'{USER}/{sid}/', auth=(USER, PASSWORD), headers={'Depth': '0'}).text
+    assert 'subscribed' in pf
+    r = env.send({'events': [{'op': 'create', 'id': 'e-in-sub', 'after': {**NEW, 'id': 'e-in-sub', 'cal': sid}}]})
+    assert r.status_code == 422                                           # rien d'écrit dans un abonnement
+    url2 = 'https://example.org/fac2.ics'
+    assert env.send({'calendars': {'update': [{'id': sid, 'before': {'name': 'Fac', 'color': 'sky', 'sub': url},
+                                                'after': {'name': 'Fac S2', 'color': 'blue', 'sub': url2}}]}}).json()['ok']
+    cal = next(c for c in env.data()['calendars'] if c['id'] == sid)
+    assert (cal['name'], cal['color'], cal['sub']['url']) == ('Fac S2', 'blue', url2)
+    # « Arrêter l'abonnement » en gardant ses événements : devient un calendrier normal
+    ev = {**NEW, 'id': 'e-garde', 'cal': sid}
+    r = env.send({'calendars': {'update': [{'id': sid, 'before': {'name': 'Fac S2', 'color': 'blue', 'sub': url2},
+                                             'after': {'name': 'Fac S2', 'color': 'blue'}}]},
+                  'events': [{'op': 'create', 'id': ev['id'], 'after': ev}]})
+    assert r.json()['ok']
+    d = env.data()
+    cal = next(c for c in d['calendars'] if c['id'] == sid)
+    assert 'sub' not in cal and evs(d, sid)['e-garde'] == ev
+    assert env.send({'calendars': {'delete': [{'id': sid}]}, 'events': [{'op': 'delete', 'id': ev['id'], 'before': ev}]}).json()['ok']
+
+
+def test_desabonnement(env):
+    env.data()
+    sid = f'dev-c-unsub{env.dev}'
+    assert env.send({'calendars': {'create': [{'id': sid, 'name': 'Fériés', 'color': 'red', 'sub': 'https://example.org/f.ics'}]}}).json()['ok']
+    env.data()
+    assert env.send({'calendars': {'delete': [{'id': sid}]}}).json()['ok']
+    assert not any(c['id'] == sid for c in env.data()['calendars'])
+
+
+def test_import_garde_le_fichier(env):
+    from test_ical_todo import FICHIER_TZ, FICHIER_VEVENT
+    env.data()
+    model = {'id': 'e-imp-api', 'cal': env.dev, 'title': 'Concert', 'start': '2026-12-06T02:00', 'end': '2026-12-06T05:00',
+             'allDay': False, 'loc': '', 'desc': '', 'rem': 'none', 'rrule': {'freq': 'none'}, 'exdates': [],
+             'icsUid': 'billet-42@billetterie.example'}
+    r = env.send({'events': [{'op': 'create', 'id': model['id'], 'after': model,
+                              'raw': {'vevent': FICHIER_VEVENT, 'vtimezones': [FICHIER_TZ]}}]})
+    assert r.json()['ok']
+    raw = env.raw(f'{USER}/{env.dev}/e-imp-api.ics').text
+    assert 'X-BILLET-PLACE:Fosse' in raw and 'ORGANIZER' in raw
+    assert evs(env.data(), env.dev)['e-imp-api'] == model
+
+
+def test_proxy_ics(env, monkeypatch):
+    from agenda import ics_fetch, main
+
+    async def fake(url, client=None):
+        if 'bad' in url:
+            raise ics_fetch.IcsError('le lien répond « 404 » (adresse privée, ou introuvable)')
+        return 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n'
+    monkeypatch.setattr(main, 'fetch_ics', fake)
+    r = env.c.get('/api/ics', params={'url': 'https://example.org/ok.ics'})
+    assert r.status_code == 200 and r.text.startswith('BEGIN:VCALENDAR') and r.headers['content-type'].startswith('text/calendar')
+    r = env.c.get('/api/ics', params={'url': 'https://example.org/bad.ics'})
+    assert r.status_code == 502 and '404' in r.json()['error']

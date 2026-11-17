@@ -2339,16 +2339,23 @@ $('ce-del').addEventListener('click', () => {
    Le navigateur ne peut lire que les liens qui l'autorisent (CORS) ; sinon on le dit, et le fichier reste possible. */
 const SUB_EVERY = 30 * 60e3, SUB_BUSY = new Set();
 const subURL = u => u.trim().replace(/^webcals?:\/\//i, 'https://');
-const subErr = e => e instanceof TypeError ? 'le navigateur n’a pas pu lire ce lien (le site ne l’autorise pas depuis une page web, ou pas de connexion)' : e.message;
+const subErr = e => e instanceof TypeError ? 'le serveur de l’agenda ne répond pas (pas de connexion ?)' : e.message;
+/* Le lien est lu par le serveur de l'agenda (pas de blocage CORS) ; son message d'erreur est repris tel quel */
 async function fetchICS(url) {
-  const r = await fetch(subURL(url), { cache: 'no-store', redirect: 'follow' });
-  if (!r.ok) throw new Error(`le lien répond « ${r.status} » (adresse privée, ou introuvable)`);
+  const r = await fetch(`/api/ics?url=${encodeURIComponent(subURL(url))}`, { cache: 'no-store', credentials: 'same-origin' });
+  if (!r.ok) { let m = ''; try { m = (await r.json()).error; } catch (e) {} throw new Error(typeof m === 'string' && m ? m : `le serveur de l’agenda répond « ${r.status} »`); }
   const txt = await r.text();
   if (!/BEGIN:VCALENDAR/i.test(txt)) throw new Error('ce lien ne renvoie pas un agenda (.ics)');
   return parseICS(txt);
 }
 /* Identité d'un événement de flux d'une lecture à l'autre : son UID et son début ; sans UID, titre, horaires et lieu */
 const subId = e => `${e.icsUid ?? `~${e.title}|${e.end}|${e.loc}`}|${e.start}`;
+/* Un id stable d'un chargement à l'autre (empreinte du calendrier et de l'identité ci-dessus) :
+   une échéance qui vise un cours d'abonnement le retrouve après rechargement de la page */
+const hash53 = str => { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; for (const ch of str) { const k = ch.codePointAt(0); h1 = Math.imul(h1 ^ k, 2654435761); h2 = Math.imul(h2 ^ k, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0'); };
+const subStableId = (calId, k, used) => { const id = `u-${hash53(`${calId}|${k}`)}`; return used.has(id) ? uid('e') : id; };
 /* Les événements du flux, dans ce calendrier ; un événement déjà connu garde son id (aperçu, échéances, surlignage).
    Une occurrence modifiée (RECURRENCE-ID) remplace la date d'origine de sa série. */
 function subEvents(c, feed) {
@@ -2356,7 +2363,7 @@ function subEvents(c, feed) {
   const live = feed.events.filter(v => v.start && v.status !== 'CANCELLED');
   const out = live.filter(v => !v.recId).map(v => {
     const { ev, note } = icsEvent(v), k = subId(ev);
-    let id = known.get(k); if (!id || used.has(id)) id = uid('e'); used.add(id);
+    let id = known.get(k); if (!id || used.has(id)) id = subStableId(c.id, k, used); used.add(id);
     return { ...ev, id, cal: c.id, ...(note ? { repNote: note } : {}) };
   });
   feed.events.filter(v => v.recId && v.start).forEach(v => {
@@ -2364,7 +2371,7 @@ function subEvents(c, feed) {
     if (series && !series.exdates.includes(key(orig))) series.exdates.push(key(orig));
     if (v.status === 'CANCELLED') return;
     const { ev } = icsEvent({ ...v, rrule: null }), k = subId(ev);
-    let id = known.get(k); if (!id || used.has(id)) id = uid('e'); used.add(id);
+    let id = known.get(k); if (!id || used.has(id)) id = subStableId(c.id, k, used); used.add(id);
     out.push({ ...ev, id, cal: c.id });
   });
   return out;
@@ -2540,13 +2547,18 @@ function icsDur(v) {
 }
 function parseICS(text) {
   const lines = text.replace(/\r\n?/g, '\n').replace(/\n[ \t]/g, '').split('\n');   // lignes repliées → une seule
-  const out = { name: null, events: [] }, stack = []; let cur = null;
+  const out = { name: null, events: [], tz: [] }, stack = []; let cur = null, tzRaw = null;
   for (const line of lines) {
+    if (cur && cur.raw) cur.raw.push(line);                            // texte brut de l'événement (import fidèle)
+    if (tzRaw) tzRaw.push(line);
     const i = line.indexOf(':'); if (i < 0) continue;
     const [nm, ...ps] = line.slice(0, i).split(';'), name = nm.toUpperCase(), value = line.slice(i + 1);
     const p = Object.fromEntries(ps.map(x => { const j = x.indexOf('='); return [x.slice(0, j).toUpperCase(), x.slice(j + 1)]; }));
-    if (name === 'BEGIN') { stack.push(value.trim().toUpperCase()); if (stack.at(-1) === 'VEVENT') cur = { exdates: [] }; continue; }
-    if (name === 'END') { if (stack.pop() === 'VEVENT' && cur) { out.events.push(cur); cur = null; } continue; }
+    if (name === 'BEGIN') { stack.push(value.trim().toUpperCase()); if (stack.at(-1) === 'VEVENT') cur = { exdates: [], raw: [line] };
+      if (stack.at(-1) === 'VTIMEZONE' && !tzRaw) tzRaw = [line]; continue; }
+    if (name === 'END') { const top = stack.pop();
+      if (top === 'VEVENT' && cur) { cur.raw = cur.raw.join('\r\n'); out.events.push(cur); cur = null; }
+      if (top === 'VTIMEZONE' && tzRaw) { out.tz.push(tzRaw.join('\r\n')); tzRaw = null; } continue; }
     if (stack.at(-1) === 'VCALENDAR' && name === 'X-WR-CALNAME') out.name = icsText(value) || null;
     if (!cur || stack.at(-1) !== 'VEVENT') continue;   // on ignore l'intérieur des alarmes (VALARM)
     if (name === 'SUMMARY') cur.title = icsText(value);
@@ -2597,10 +2609,10 @@ async function importFiles(files) {
     let txt = ''; try { txt = await f.text(); } catch (e) {}
     if (!/BEGIN:VCALENDAR/i.test(txt)) continue;
     const c = parseICS(txt); name = name || c.name;
-    c.events.forEach(v => { if (!v.start || v.status === 'CANCELLED' || v.recId) skipped++; else raw.push(v); });
+    c.events.forEach(v => { v.tz = c.tz; if (!v.start || v.status === 'CANCELLED' || v.recId) skipped++; else raw.push(v); });
   }
   if (!raw.length) { toast(skipped ? 'Rien à ajouter : les événements du fichier sont annulés' : 'Aucun événement à ajouter dans ce fichier (.ics attendu)'); return; }
-  const items = raw.map(icsEvent).map(x => {
+  const items = raw.map(v => ({ ...icsEvent(v), raw: v.raw, tz: v.tz })).map(x => {
     const old = x.ev.icsUid && S.events.find(e => e.icsUid === x.ev.icsUid);
     return { ...x, old, kind: !old ? 'new' : ICS_KEYS.every(k => JSON.stringify(old[k] ?? null) === JSON.stringify(x.ev[k] ?? null)) ? 'same' : 'upd' };
   }).sort((a, b) => a.ev.start.localeCompare(b.ev.start));
@@ -2649,7 +2661,9 @@ function doImport() {
   let calId = I.cal;
   if (calId === '__new') { calId = uid('c'); S.calendars.push({ id: calId, name: I.calName, color: I.newColor, visible: true }); }
   const c = getCal(calId); if (c) c.visible = true; else return;
-  const added = pick.filter(x => x.kind === 'new').map(x => { const ev = { ...x.ev, id: uid('e'), cal: calId }; S.events.push(ev); return ev; });
+  const added = pick.filter(x => x.kind === 'new').map(x => { const ev = { ...x.ev, id: uid('e'), cal: calId }; S.events.push(ev);
+    if (typeof IMPORT_RAW !== 'undefined' && x.raw) IMPORT_RAW.set(ev.id, { vevent: x.raw, vtimezones: x.tz || [] });   // sync.js : tout le fichier est gardé
+    return ev; });
   const updated = pick.filter(x => x.kind === 'upd').map(x => { ICS_KEYS.forEach(k => { x.old[k] = x.ev[k]; }); return x.old; });
   if (added.length && I.cal !== '__new') rememberCal(calId);
   if (I.cal === '__new' && !added.length) S.calendars.pop();   // rien de nouveau : pas de calendrier vide

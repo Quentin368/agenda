@@ -35,7 +35,9 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   auteur des commits = adresse noreply GitHub, réglée localement), déploiement dans `~/docker/agenda`.
 - Frontend : `static/index.html`, `static/app.css`, `static/app.js` (la maquette), `static/sync.js` (lien avec
   le serveur : connexion, chargement, état serveur, synchronisation) ; dépendances embarquées dans
-  `static/vendor/` et `static/fonts/`. Backend : `backend/agenda/` ; tests : `tests/` (`.venv/bin/pytest`).
+  `static/vendor/` et `static/fonts/`. Backend : `backend/agenda/` (`ical_read`/`ical_write`/`ical_todo` conversions,
+  `changes` écriture, `dav` CalDAV, `ics_fetch` abonnements) ; tests : `tests/` (`.venv/bin/pytest`) et
+  `tools/e2e_navigateur.py` (vrai Chromium ⇄ backend ⇄ Radicale jetable).
 - Image Docker : `python:3.13-alpine`, construite par GitHub Actions (`.github/workflows/image.yml`).
 
 ## La maquette : ce qu'il faut savoir (`maquette.html`, ~4 900 lignes, tout-en-un)
@@ -103,6 +105,15 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   « Annuler » le remet tel quel (If-None-Match).
 - Séries non représentables (occurrences calculées) : modifier une occurrence = **cette occurrence seulement**
   (RECURRENCE-ID) ; la répétition elle-même n'est pas modifiable dans l'agenda.
+
+## Décisions validées (17/11/2026, début de phase 4)
+- Abonnements : la LISTE est gardée dans Radicale comme **calendriers abonnés** (collection `CS:subscribed` avec
+  `CS:source` = l'adresse, nom, couleur) ; leurs événements sont lus par le backend (cache), jamais copiés.
+- Échéances : calendrier de tâches dédié (VTODO seulement), créé automatiquement à la première échéance,
+  **invisible** dans la liste des calendriers de l'agenda.
+- Import .ics : **tout le contenu** de l'événement importé est gardé (iCal brut du fichier), pas seulement les
+  champs affichés.
+- Rappels : pas de notifications système en plus (comme la maquette ; le téléphone lit les VALARM).
 
 ## Correspondances iCalendar (validées le 17/11/2026)
 - Événement ⇄ VEVENT ; `id` ⇄ UID (si l'UID contient des caractères non sûrs — `@`, `/`… — l'id est une

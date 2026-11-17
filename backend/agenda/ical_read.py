@@ -158,6 +158,8 @@ class Reader:
                     out['gifts'] = [g for g in gifts if isinstance(g, dict) and isinstance(g.get('t'), str)]
             except ValueError:
                 pass
+        if x('X-AGENDA-ICSUID'):
+            out['icsUid'] = x('X-AGENDA-ICSUID')
         if x('X-AGENDA-OPENEND').upper() in ('1', 'TRUE'):
             out['openEnd'] = True
         return out

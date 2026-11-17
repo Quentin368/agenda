@@ -22,10 +22,12 @@ from .auth import Session
 from .config import Settings
 from .dav import Conflict, DavClient
 from .ical_read import Reader, calendar_id
+from .ical_todo import TodoWriter
 from .ical_write import Unsupported, Writer
 
 log = logging.getLogger('agenda')
 SAFE = re.compile(r'^[A-Za-z0-9._:-]{1,120}$')
+TASKS = 'echeances'
 TRASH_MAX = 100
 
 
@@ -87,13 +89,17 @@ class Applier:
                 raise Refused(f'nom de calendrier refusé : {c["id"]}')
         for c in cals.get('update', []) + cals.get('delete', []):
             self.check_writable(c['id'])
-        new_cals = {c['id'] for c in cals.get('create', [])}
+        # Abonnement arrêté (« garder les événements ») : la collection abonnée devient un vrai calendrier
+        converted = {c['id'] for c in cals.get('update', []) if c['before'].get('sub') and not c['after'].get('sub')}
+        new_cals = {c['id'] for c in cals.get('create', []) if not c.get('sub')} | converted
         gone_cals = {c['id'] for c in cals.get('delete', [])}
 
         for ch in batch.get('events', []):
             for cid in {(ch.get('before') or {}).get('cal'), (ch.get('after') or {}).get('cal')} - {None}:
                 if cid not in new_cals:
                     self.check_writable(cid)
+                    if self.s.meta_cals[cid].get('kind') == 'subscribed':
+                        raise Refused('les événements d’un abonnement ne s’écrivent pas dans Radicale')
             if ch['op'] != 'create' and ch['id'] not in self.s.meta_events:
                 raise Refused(f'événement inconnu du serveur : {ch["id"]}')
             if ch['op'] == 'create' and not SAFE.match(ch['id']):
@@ -109,6 +115,16 @@ class Applier:
                             not (ch['op'] == 'create' and (self.s.trash.get(ch['id']) or {}).get('kind') in ('single', 'series')))
         for ch in sorted(evs, key=first):                                           # une série restaurée avant ses occurrences
             getattr(self, 'plan_' + ch['op'])(ch)
+        self.dues = batch.get('dues') or []
+        if self.dues:
+            name = self.cfg.cal_prefix + TASKS
+            if not self.cfg.writable(name):
+                raise Refused('les échéances ne peuvent pas être enregistrées (calendrier de tâches verrouillé)')
+            for d in self.dues:
+                if d['op'] == 'create' and not SAFE.match(d['id']):
+                    raise Refused(f'identifiant refusé : {d["id"]}')
+                if d['op'] != 'create' and d['id'] not in self.s.meta_dues:
+                    raise Refused(f'échéance inconnue du serveur : {d["id"]}')
 
     def plan_create(self, ch):
         id_, after = ch['id'], ch['after']
@@ -133,6 +149,12 @@ class Applier:
             self.s.meta_events[id_] = t['meta']
             return
         cal_href = self.cal_href(after['cal']) if after['cal'] not in self.new_cals else self.new_cal_href(after['cal'])
+        if ch.get('raw'):                                          # import .ics : tout le contenu du fichier est gardé
+            href = f'{cal_href}{id_}.ics'
+            self.creates.append((href, self.w.import_resource(id_, ch['raw'], after), id_))
+            self.s.meta_events[id_] = {'cal': after['cal'], 'href': href, 'etag': None, 'uid': id_, 'kind':
+                                       'series' if (after.get('rrule') or {}).get('freq', 'none') != 'none' else 'single'}
+            return
         if t and t['kind'] in ('single', 'series'):                # « Annuler » une suppression : l'iCal brut revient
             raw = t['raw']
             if t['before'] != after:
@@ -241,8 +263,14 @@ class Applier:
             await self.create_calendar(c)
         for c in cals.get('update', []):
             b, a = c['before'], c['after']
+            if b.get('sub') and not a.get('sub'):                      # abonnement arrêté : devient un calendrier
+                await self.dav.delete(self.cal_href(c['id']), None)
+                self.s.meta_cals.pop(c['id'], None)
+                await self.create_calendar({'id': c['id'], 'name': a['name'], 'color': a['color']})
+                continue
             await self.dav.proppatch(self.cal_href(c['id']), name=a['name'] if a['name'] != b['name'] else None,
-                                     color=palette.to_hex(a['color']) if a['color'] != b['color'] else None)
+                                     color=palette.to_hex(a['color']) if a['color'] != b['color'] else None,
+                                     source=a['sub'] if a.get('sub') and a.get('sub') != b.get('sub') else None)
         for href, wk in self.works.items():
             await self.apply_work(wk)
         for href, ics, id_ in self.creates:
@@ -250,6 +278,8 @@ class Applier:
             self.s.meta_events[id_] = {**self.s.meta_events.get(id_, {}), 'href': href, 'etag': etag}
         for c in cals.get('delete', []):
             await self.delete_calendar(c['id'])
+        for d in self.dues:
+            await self.apply_due(d)
         for i in self.removed:
             self.s.meta_events.pop(i, None)
         return {'ok': True, 'removed': sorted(self.removed)}
@@ -284,11 +314,57 @@ class Applier:
             if m['href'] in (wk.href, href):
                 m['href'], m['etag'] = href, new_etag
 
+    async def tasks_href(self) -> str:
+        """Le calendrier des échéances (VTODO seulement), créé à la première échéance."""
+        if not self.s.tasks_href:
+            href = f'{self.s.home}{self.cfg.cal_prefix}{TASKS}/'
+            await self.dav.mkcalendar(href, 'Échéances', palette.to_hex('slate'), comps=('VTODO',))
+            self.s.tasks_href = href
+        return self.s.tasks_href
+
+    async def apply_due(self, d):
+        tw = TodoWriter(self.cfg.timezone)
+        id_ = d['id']
+        if d['op'] == 'create':
+            after = {**d['after'], 'evUid': self.ev_uid(d['after'])}
+            t = self.s.trash.get('due:' + id_)
+            href = f'{await self.tasks_href()}{id_}.ics'
+            raw = tw.apply(t['raw'], t['before'], after) if t else tw.new_resource(after)
+            if t and t['before'] == d['after']:
+                raw = t['raw']                                          # « Annuler » : la tâche revient à l'identique
+            etag = await self.dav.put(href, raw, None)
+            self.s.meta_dues[id_] = {'href': href, 'etag': etag}
+            return
+        m = self.s.meta_dues[id_]
+        item = await self.dav.get(m['href'])
+        if m.get('etag') and item.etag and item.etag != m['etag']:
+            raise Conflict(f'{m["href"]} modifié ailleurs')
+        if d['op'] == 'delete':
+            self.trash('due:' + id_, {'kind': 'todo', 'raw': item.data, 'before': d['before']})
+            await self.dav.delete(m['href'], item.etag)
+            self.s.meta_dues.pop(id_, None)
+            return
+        after = {**d['after'], 'evUid': self.ev_uid(d['after'])}
+        before = {**d['before'], 'evUid': self.ev_uid(d['before'])}
+        etag = await self.dav.put(m['href'], tw.apply(item.data, before, after), item.etag)
+        m['etag'] = etag
+
+    def ev_uid(self, due: dict) -> str:
+        """Le vrai UID de l'événement visé (RELATED-TO) : connu du serveur, ou donné par l'interface (abonnement)."""
+        m = self.s.meta_events.get(due['ev'])
+        return (m or {}).get('uid') or due.get('evUid') or due['ev']
+
     async def create_calendar(self, c):
         href = self.new_cal_href(c['id'])
+        if c.get('sub'):                                                # abonnement : gardé dans Radicale, sans événements
+            await self.dav.mksubscribed(href, c['name'], palette.to_hex(c['color']), c['sub'])
+            self.s.meta_cals[c['id']] = {'href': href, 'ctag': None, 'colorHex': palette.to_hex(c['color']), 'writable': True,
+                                         'kind': 'subscribed'}
+            return
         t = self.s.trash_cals.pop(c['id'], None)
         await self.dav.mkcalendar(href, c['name'], palette.to_hex(c['color']))
-        self.s.meta_cals[c['id']] = {'href': href, 'ctag': None, 'colorHex': palette.to_hex(c['color']), 'writable': True}
+        self.s.meta_cals[c['id']] = {'href': href, 'ctag': None, 'colorHex': palette.to_hex(c['color']), 'writable': True,
+                                     'kind': 'calendar'}
         if t:
             for it in t['items']:
                 etag = await self.dav.put(href + it['name'], it['data'], None)
@@ -297,6 +373,10 @@ class Applier:
 
     async def delete_calendar(self, cal_id: str):
         href = self.cal_href(cal_id)
+        if self.s.meta_cals[cal_id].get('kind') == 'subscribed':        # désabonnement : rien d'autre à garder
+            await self.dav.delete(href, None)
+            self.s.meta_cals.pop(cal_id, None)
+            return
         items = await self.dav.all_items(href)
         metas = {}
         for i, m in self.s.meta_events.items():
