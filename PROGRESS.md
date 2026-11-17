@@ -1,10 +1,10 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 5 en cours** (17/11/2026) : revues faites et corrigées, README écrit, sauvegarde quotidienne en place.
-Conteneur sur l'image construite sur le Pi (`AGENDA_IMAGE=agenda:dev`, temporaire), verrou encore actif.
-**Reste : validation, puis bascule sur les vrais calendriers sur « go » explicite** (sauvegarde fraîche →
-`WRITABLE_CALENDARS=*` → suppression des calendriers `dev-…` avec accord).
+**Bascule faite le 17/11/2026** (sur « go » explicite) : sauvegarde fraîche, calendriers de test `dev-agenda`
+(`dev-c-e1dc…`) et `dev-echeances` supprimés (accord donné), verrou ouvert (`WRITABLE_CALENDARS=*`), conteneur sur
+l'image ghcr.io. Abonnement « MGF 2026-2027 » gardé (collection `dev-c-8766…`, fonctionne normalement).
+En attente : accord pour supprimer les 11 événements « (test) » / factices de perso, cours, anniversaires.
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
@@ -134,8 +134,7 @@ en 1440×900, plus 4 vues en mobile 390×844 :
 - Tests : 122 pytest ; navigateur 29/29.
 
 ## Reste à faire
-- Bascule sur les vrais calendriers (sur « go »), puis suppression des calendriers de test `dev-…`
-  (dont `dev-echeances`, invisible dans l'agenda : à supprimer depuis l'interface web de Radicale ou AgenDAV).
+- Suppression des événements factices des vrais calendriers (en attente d'accord sur la liste).
 
 ## Problèmes connus
 - **Largeur de la colonne des heures (vues Jour/Semaine) : ±2 px selon le moment où les polices finissent de
