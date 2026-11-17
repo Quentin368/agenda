@@ -4,7 +4,8 @@
 **Bascule faite le 17/11/2026** (sur « go » explicite) : sauvegarde fraîche, calendriers de test `dev-agenda`
 (`dev-c-e1dc…`) et `dev-echeances` supprimés (accord donné), verrou ouvert (`WRITABLE_CALENDARS=*`), conteneur sur
 l'image ghcr.io. Abonnement « MGF 2026-2027 » gardé (collection `dev-c-8766…`, fonctionne normalement).
-En attente : accord pour supprimer les 11 événements « (test) » / factices de perso, cours, anniversaires.
+Les 11 événements factices de perso, cours et anniversaires ont été supprimés (accord donné ; sauvegarde
+`radicale-20261117-145842.tar.gz` prise juste avant). **Projet terminé : les 5 phases sont faites.**
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
@@ -134,7 +135,8 @@ en 1440×900, plus 4 vues en mobile 390×844 :
 - Tests : 122 pytest ; navigateur 29/29.
 
 ## Reste à faire
-- Suppression des événements factices des vrais calendriers (en attente d'accord sur la liste).
+- Rien d'obligatoire. Idées si besoin : copier de temps en temps une sauvegarde hors du Pi (les archives sont sur
+  le même disque que Radicale) ; corriger la largeur de la colonne des heures (voir problèmes connus).
 
 ## Problèmes connus
 - **Largeur de la colonne des heures (vues Jour/Semaine) : ±2 px selon le moment où les polices finissent de
