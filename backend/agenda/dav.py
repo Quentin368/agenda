@@ -95,11 +95,16 @@ class DavClient:
         return urljoin(self.base, href)
 
     async def _request(self, method: str, href: str, body: bytes | None = None, depth: str = '0') -> httpx.Response:
-        try:
-            r = await self._client.request(method, self._url(href), content=body, auth=self._auth,
-                                           headers={'Depth': depth, 'Content-Type': 'application/xml; charset=utf-8'})
-        except httpx.HTTPError as e:
-            raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
+        for attempt in (1, 2):           # lecture (PROPFIND/REPORT) : une nouvelle tentative si la connexion a sauté
+            try:
+                r = await self._client.request(method, self._url(href), content=body, auth=self._auth,
+                                               headers={'Depth': depth, 'Content-Type': 'application/xml; charset=utf-8'})
+                break
+            except httpx.TransportError as e:
+                if attempt == 2:
+                    raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
+            except httpx.HTTPError as e:
+                raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
         if r.status_code in (401, 403):
             raise AuthError()
         if r.status_code != 207:
@@ -195,10 +200,15 @@ async def _write(self: DavClient, method: str, href: str, *, body: bytes | None 
 
 async def get(self: DavClient, href: str) -> Item:
     """iCal brut + ETag actuels d'une ressource (404 → Conflict : elle a disparu entre-temps)."""
-    try:
-        r = await self._client.get(self._url(href), auth=self._auth)
-    except httpx.HTTPError as e:
-        raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
+    for attempt in (1, 2):               # lecture : une nouvelle tentative si la connexion a sauté
+        try:
+            r = await self._client.get(self._url(href), auth=self._auth)
+            break
+        except httpx.TransportError as e:
+            if attempt == 2:
+                raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
+        except httpx.HTTPError as e:
+            raise DavError(f'Radicale injoignable ({type(e).__name__})') from e
     if r.status_code in (401, 403):
         raise AuthError()
     if r.status_code == 404:

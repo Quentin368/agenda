@@ -40,7 +40,10 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
 
     @asynccontextmanager
     async def lifespan(_app):
-        state['http'] = httpx.AsyncClient(timeout=TIMEOUT, transport=transport, follow_redirects=False)
+        # Pas de connexions gardées ouvertes : Radicale peut fermer une connexion inactive, et la réutiliser
+        # donnerait de fausses erreurs « injoignable ». Radicale est sur la même machine : le coût est négligeable.
+        state['http'] = httpx.AsyncClient(timeout=TIMEOUT, transport=transport, follow_redirects=False,
+                                          limits=httpx.Limits(max_keepalive_connections=0))
         yield
         await state['http'].aclose()
 
