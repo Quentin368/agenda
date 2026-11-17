@@ -9,6 +9,9 @@ Les 11 événements factices de perso, cours et anniversaires ont été supprim�
 Ajout demandé ensuite : **copie des abonnements dans Radicale** (calendriers « miroir », `POST /api/subs/mirror`,
 conversion automatique des anciens abonnements comme « MGF »), voir la décision dans CLAUDE.md. Tests : 123 pytest,
 navigateur 32/32. **Validé le 17/11/2026** (cours de MGF visibles dans AgenDAV) ; conteneur sur l'image ghcr.io.
+Ajout : **favicon** = icônes fournies par Quentin (`static/favicon.svg`, `favicon.ico`) + PNG dérivés
+(`favicon-32.png`, `apple-touch-icon.png`) ; adresse versionnée `?v=4` dans `index.html` (à incrémenter si l'icône
+change, les navigateurs la gardent longtemps en mémoire). Validé le 17/11/2026.
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
