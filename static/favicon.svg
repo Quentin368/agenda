@@ -1,8 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Logo de l'agenda, version simple : page de calendrier blanche (attaches + en-tête) sur le carré sombre -->
-  <rect width="64" height="64" rx="18" fill="#171a2c"/>
-  <rect x="13" y="17" width="38" height="33" rx="6" fill="#fff"/>
-  <rect x="13" y="26" width="38" height="3.5" fill="#171a2c"/>
-  <rect x="20" y="11" width="5" height="11" rx="2.5" fill="#fff" stroke="#171a2c" stroke-width="2.5"/>
-  <rect x="39" y="11" width="5" height="11" rx="2.5" fill="#fff" stroke="#171a2c" stroke-width="2.5"/>
+  <!-- Logo de l'agenda : une page de calendrier, sans fond. Noire en thème clair, blanche en thème sombre.
+       L'en-tête et le contour des attaches sont découpés (transparents). -->
+  <style>.c{fill:#171a2c}@media (prefers-color-scheme:dark){.c{fill:#fff}}</style>
+  <mask id="m">
+    <rect width="64" height="64" fill="#fff"/>
+    <rect x="0" y="24" width="64" height="4.5" fill="#000"/>
+    <rect x="14" y="1" width="12" height="22" rx="6" fill="#000"/>
+    <rect x="38" y="1" width="12" height="22" rx="6" fill="#000"/>
+  </mask>
+  <rect class="c" x="5" y="11" width="54" height="49" rx="9" mask="url(#m)"/>
+  <rect class="c" x="17" y="4" width="6" height="16" rx="3"/>
+  <rect class="c" x="41" y="4" width="6" height="16" rx="3"/>
 </svg>
