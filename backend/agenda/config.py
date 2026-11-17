@@ -30,8 +30,22 @@ class Settings:
     # Limitation des tentatives de connexion
     login_max_failures: int = field(default_factory=lambda: _int('LOGIN_MAX_FAILURES', 5))
     login_window_minutes: int = field(default_factory=lambda: _int('LOGIN_WINDOW_MINUTES', 15))
+    # Verrou d'écriture : motifs des collections modifiables (« dev-agenda,dev-* », « * » = toutes).
+    # Vide (par défaut) : aucune écriture, l'agenda est en lecture seule.
+    writable_calendars: tuple = field(default_factory=lambda: tuple(
+        p.strip() for p in os.environ.get('WRITABLE_CALENDARS', '').split(',') if p.strip()))
     # Fichiers de l'interface
     static_dir: Path = field(default_factory=lambda: Path(os.environ.get('STATIC_DIR', Path(__file__).resolve().parents[2] / 'static')))
+
+
+    def writable(self, collection: str) -> bool:
+        from fnmatch import fnmatchcase
+        return any(fnmatchcase(collection, p) for p in self.writable_calendars)
+
+    @property
+    def cal_prefix(self) -> str:
+        """Préfixe imposé aux calendriers créés depuis l'agenda tant que l'écriture est limitée (« dev- »)."""
+        return '' if '*' in self.writable_calendars else 'dev-'
 
 
 settings = Settings()

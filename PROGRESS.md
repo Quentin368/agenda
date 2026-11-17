@@ -1,10 +1,10 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 2 validée** (17/11/2026) et envoyée sur GitHub. L'image est construite par GitHub Actions et publiée
-sur `ghcr.io/chewbacca-368/agenda:latest` ; le Pi est connecté à ghcr.io (`gh auth refresh -s read:packages` puis
-`gh auth token | docker login ghcr.io -u Chewbacca-368 --password-stdin`) et le conteneur `agenda` utilise
-cette image. **Prochaine étape : phase 3 (écriture)**, questions à poser avant de coder.
+**Phase 3 terminée** (17/11/2026), en attente de validation : conteneur `agenda` sur le port 8090 avec l'image
+construite sur le Pi (`AGENDA_IMAGE=agenda:dev` dans `.env`, temporaire) et le verrou d'écriture actif
+(`WRITABLE_CALENDARS=dev-agenda,dev-*`). Pas encore envoyée sur GitHub. Après validation : envoi sur GitHub, attendre
+le workflow, `docker compose pull`, retirer la ligne `AGENDA_IMAGE` du `.env`, `docker compose up -d`.
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
@@ -72,8 +72,32 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   conservée au rechargement, déconnexion avec CSRF, reprise de session, aucune erreur JavaScript).
 - Conteneur : en bonne santé, joint `http://radicale:5232/`, refuse l'API sans connexion.
 
+### Phase 3 — Écriture
+- **Backend** :
+  - `ical_write.py` : écriture en partant de l'iCal brut, seuls les champs modifiés sont réécrits (titre, lieu,
+    notes, dates en gardant leur forme TZID/UTC/flottante, DURATION gardée, répétition, EXDATE, rappel, X-AGENDA-*),
+    DTSTAMP/LAST-MODIFIED mis à jour, SEQUENCE +1 pour un changement de date ou de répétition ; VTIMEZONE de Paris
+    compacte (par règles) ajoutée si besoin ; occurrences modifiées (RECURRENCE-ID) créées/modifiées/supprimées,
+    décalées avec la série, retirées si la série est coupée avant elles.
+  - `changes.py` + `POST /api/changes` : applique un lot (calendriers créés/renommés/supprimés, événements
+    créés/modifiés/supprimés). La correspondance id → ressource/ETag est gardée dans la SESSION (jamais fournie par
+    l'interface) ; verrou vérifié avant toute écriture ; une ressource = une lecture (ETag comparé) + une écriture
+    (If-Match / If-None-Match) ; conflit → 409, rien n'est écrasé. Corbeille de session (iCal brut) : « Annuler »
+    une suppression remet le fichier à l'octet près, y compris un calendrier entier.
+  - `dav.py` : GET, PUT, DELETE, MKCALENDAR, PROPPATCH, lecture de tout le contenu d'une collection.
+  - Verrou `WRITABLE_CALENDARS` (vide par défaut = lecture seule), préfixe `dev-` des nouveaux calendriers.
+- **Interface** : `sync.js` calcule la différence avec le dernier état connu du serveur après chaque action et
+  l'envoie (une requête à la fois, la suivante après) ; reconnaît « cette occurrence seulement » (une date exclue +
+  un événement simple dans le même calendrier) pour l'écrire en RECURRENCE-ID ; refuse avec un message : calendrier
+  verrouillé, échéances (phase 4), répétition d'une série « spéciale » ; conflit/refus/panne → message + rechargement.
+  `app.js` : `uid()` produit des identifiants aléatoires (`e-` + 24 hexadécimaux, `dev-c-…` pour un calendrier).
+- **Tests** : 95 pytest (dont 24 d'écriture : aller-retour exact, fidélité, formes de dates, occurrences, et 12 de
+  bout en bout contre un Radicale jetable : verrou, CSRF, création/modification/suppression/annulation, conflit,
+  occurrences, séries spéciales, changement de calendrier, calendriers).
+  Nouveau `tools/e2e_navigateur.py` : vrai Chromium ⇄ vrai backend ⇄ Radicale jetable, 21/21 (dont un vrai
+  glisser-déposer à la souris).
+
 ## Reste à faire
-- Phase 3 — Écriture (synchronisation par différence, ETag).
 - Phase 4 — Spécificités (anniversaires X-AGENDA-*, VTODO, VALARM, abonnements, import .ics).
 - Phase 5 — Finitions (revues, README, bascule sur les vrais calendriers).
 
@@ -87,10 +111,13 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   2 ans après aujourd'hui (au plus 1 500 par série).
 - Rappels : seul le premier rappel relatif au début est repris (un rappel à heure fixe ou relatif à la fin
   s'affiche « aucun ») ; ils restent intacts dans Radicale.
-- Phase 2 : en lecture seule, une modification est annulée après coup (la fenêtre d'édition se ferme : la
-  saisie est perdue). Temporaire.
-- Chromium sans fenêtre sur le Pi n'arrive pas à charger de pages http (même locales) : les tests visuels se
-  font en ouvrant les fichiers directement (`file://`). Sans effet sur l'application.
+- Une modification refusée (calendrier verrouillé, échéance, conflit) est annulée après coup : la fenêtre
+  d'édition s'est déjà fermée, la saisie est perdue.
+- Après « cette occurrence seulement », l'occurrence garde jusqu'au prochain rechargement l'id donné par
+  l'interface ; au rechargement elle prend son id définitif (`…~r…`) et l'historique « Annuler » est vidé.
+- Échéances : pas encore enregistrées (phase 4) ; les ajouter est refusé avec un message.
+- Chromium sans fenêtre sur le Pi : il faut `--password-store=basic`, sinon il attend indéfiniment le trousseau
+  système avant toute requête http (c'était la cause des blocages des phases 1 et 2).
 
 ## Décisions prises
 - Pas de mot de passe ni d'identité personnelle dans git ; dépôt GitHub privé (CLAUDE.md décrit l'infrastructure).
@@ -105,5 +132,11 @@ en 1440×900, plus 4 vues en mobile 390×844 :
 - Événement sans fin ni durée → `openEnd` (une heure à l'écran), comme l'import .ics de la maquette.
 - Image Alpine plutôt que Debian slim (102 Mo au lieu de 229 Mo), tests identiques.
 - Pas de `--proxy-headers` (pas de reverse proxy) : l'adresse IP utilisée pour la limitation est la vraie.
+- Phase 3 : le calendrier de test se crée depuis l'agenda lui-même (bouton +) ; sa collection s'appelle
+  `dev-c-…` (le verrou l'autorise), son nom affiché est libre (ex. « dev-agenda »).
+- Une série hebdomadaire qui commence un jour hors de ses jours est enregistrée à partir de sa première vraie
+  occurrence (sinon la norme compterait un jour que la maquette n'affiche pas).
+- Les rappels (VALARM) et propriétés X-AGENDA-* sont déjà écrits (phase 3) : plus simple que de les ignorer ;
+  la phase 4 garde les échéances (VTODO), les abonnements côté serveur et l'import.
 - La balise `<meta name="claude:viewport-fit-sides">` de la maquette est conservée telle quelle (sans effet
   dans un navigateur).

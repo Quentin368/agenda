@@ -1,9 +1,12 @@
-/* ===================== Serveur : connexion, chargement, lecture seule (phase 2) =====================
+/* ===================== Serveur : connexion, chargement, synchronisation par différence =====================
    Radicale reste l'unique source de vérité. L'interface garde le « dernier état connu du serveur » (SERVER) ;
-   après chaque modification (refreshData → onDataChanged), elle compare S à cet état.
-   Phase 2 : toute différence est annulée avec un message (lecture seule). Phase 3 : elle sera envoyée au serveur.
-   Ne comptent pas : la visibilité des calendriers (préférence locale) et les abonnements (jamais écrits dans Radicale). */
+   après chaque modification (refreshData → onDataChanged), elle compare S à cet état et envoie la différence
+   (créations / modifications / suppressions). « Annuler » restaure un instantané : la différence repart d'elle-même.
+   Ne comptent pas : la visibilité des calendriers (préférence locale) et les abonnements (jamais écrits dans Radicale).
+   En cas de conflit (modifié ailleurs) ou de refus, rien n'est écrasé : message, puis rechargement depuis Radicale. */
 const API = { user: null, csrf: null };
+let CAL_PREFIX = '';                                 // imposé par le serveur aux nouveaux calendriers (« dev- » pendant les essais)
+let SENDING = false, PENDING = false;
 let SERVER = null;                                  // { data, canon } : dernières données reçues du serveur
 let SRV_META = { events: {}, calendars: {} };       // ressource, ETag, UID… de chaque événement (hors de S : une copie ne les emporte pas)
 let APPLYING = false, LOADING = false;
@@ -47,19 +50,101 @@ function applyServer(data) {
   APPLYING = true; try { refreshData(); } finally { APPLYING = false; }
 }
 
-/* Après chaque refreshData() : une modification de l'utilisateur ? (phase 2 : refusée) */
+/* Après chaque refreshData() : une modification de l'utilisateur ? → envoyée (après la fin de l'action en cours) */
 function onDataChanged() {
   if (APPLYING || !SERVER) return;
   const n = UNDO.length;                    // toast(…, snap) ajoute « Annuler » juste après refreshData()
-  queueMicrotask(() => {
-    if (!SERVER || canonState() === SERVER.canon) return;
-    applyServer(SERVER.data);
-    UNDO.length = Math.min(UNDO.length, n); REDO.length = 0;
-    toast('Lecture seule pour l’instant', null, 'modification non enregistrée dans Radicale');
-  });
+  queueMicrotask(() => sync(n));
 }
 
-async function loadData() {
+/* Revenir à l'état du serveur (modification refusée avant envoi) : l'« Annuler » de l'action disparaît aussi */
+function refuse(n, msg, detail) {
+  applyServer(SERVER.data);
+  UNDO.length = Math.min(UNDO.length, n); REDO.length = 0;
+  toast(msg, null, detail);
+}
+
+const rec = e => (e.rrule || {}).freq && e.rrule.freq !== 'none';
+const same = (a, b) => JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
+
+/* Ce qui a changé entre l'état du serveur et S */
+function diff() {
+  const subIds = new Set(S.calendars.filter(c => c.sub).map(c => c.id));
+  const cals = S.calendars.filter(c => !c.sub).map(({ visible, ...c }) => clone(c));
+  const evs = S.events.filter(e => !subIds.has(e.cal)).map(clone);
+  const sc = new Map(SERVER.data.calendars.map(({ visible, ...c }) => [c.id, c]));
+  const se = new Map(SERVER.data.events.map(e => [e.id, norm(clone(e))]));
+  const nowC = new Map(cals.map(c => [c.id, c])), nowE = new Map(evs.map(e => [e.id, e]));
+  const out = { calendars: { create: [], update: [], delete: [] }, events: [] };
+  for (const c of cals) {
+    const b = sc.get(c.id);
+    if (!b) out.calendars.create.push({ id: c.id, name: c.name, color: c.color });
+    else if (b.name !== c.name || b.color !== c.color) out.calendars.update.push({ id: c.id, before: { name: b.name, color: b.color }, after: { name: c.name, color: c.color } });
+  }
+  for (const id of sc.keys()) if (!nowC.has(id)) out.calendars.delete.push({ id });
+  for (const e of evs) {
+    const b = se.get(e.id);
+    if (!b) out.events.push({ op: 'create', id: e.id, after: e });
+    else if (!same(b, e)) out.events.push({ op: 'update', id: e.id, before: b, after: e });
+  }
+  for (const [id, b] of se) if (!nowE.has(id)) out.events.push({ op: 'delete', id, before: b });
+  /* « Cette occurrence seulement » : la série gagne UNE date exclue et UN événement simple apparaît dans le même
+     calendrier → c'est une occurrence modifiée (RECURRENCE-ID), écrite dans la ressource de la série. */
+  const added = out.events.filter(c => c.op === 'update' && rec(c.before) && rec(c.after) && c.before.cal === c.after.cal)
+    .map(c => ({ c, days: c.after.exdates.filter(k => !c.before.exdates.includes(k)) })).filter(x => x.days.length === 1);
+  const singles = out.events.filter(c => c.op === 'create' && !rec(c.after));
+  if (added.length === 1 && singles.length === 1 && singles[0].after.cal === added[0].c.after.cal)
+    singles[0].overrideOf = { series: added[0].c.id, day: added[0].days[0], seriesModel: added[0].c.before };
+  const empty = !out.events.length && !out.calendars.create.length && !out.calendars.update.length && !out.calendars.delete.length;
+  return { batch: out, empty, target: { calendars: cals, events: evs }, duesChanged: !same(S.dues, SERVER.data.dues || []) };
+}
+
+function writable(calId, batch) {
+  if (batch.calendars.create.some(c => c.id === calId)) return true;
+  return !!(SRV_META.calendars[calId] || {}).writable;
+}
+
+async function sync(n = UNDO.length) {
+  if (!SERVER || APPLYING) return;
+  if (SENDING) { PENDING = true; return; }
+  const d = diff();
+  if (d.duesChanged) return refuse(n, 'Échéances : bientôt', 'leur enregistrement dans Radicale arrive à la prochaine étape');
+  if (d.empty) return;
+  const touched = new Set([...d.batch.calendars.update, ...d.batch.calendars.delete].map(c => c.id));
+  d.batch.events.forEach(c => [c.before, c.after].forEach(e => e && touched.add(e.cal)));
+  const locked = [...touched].filter(id => !writable(id, d.batch));
+  if (locked.length) {
+    const names = locked.map(id => (SERVER.data.calendars.find(c => c.id === id) || {}).name || id).join(', ');
+    return refuse(n, 'Calendrier en lecture seule', `${names} : modification non enregistrée (essais en cours sur un calendrier de test)`);
+  }
+  const series = d.batch.events.find(c => c.op === 'update' && ['override', 'occurrence'].includes((SRV_META.events[c.id] || {}).kind) && rec(c.after));
+  if (series) return refuse(n, 'Répétition non modifiable ici', 'cette série a été créée sur un autre appareil : change sa répétition depuis le téléphone');
+
+  SENDING = true;
+  const r = await api('/api/changes', { method: 'POST', body: JSON.stringify(d.batch) });
+  SENDING = false;
+  if (r.ok) {
+    const removed = new Set(r.body.removed || []);
+    d.target.events = d.target.events.filter(e => !removed.has(e.id));
+    SERVER.data = { ...SERVER.data, calendars: d.target.calendars, events: d.target.events };
+    SERVER.canon = canonData(SERVER.data);
+    d.batch.calendars.create.forEach(c => { SRV_META.calendars[c.id] = { writable: true }; });
+    d.batch.events.filter(c => c.op === 'create').forEach(c => { SRV_META.events[c.id] = { kind: c.overrideOf ? 'override' : rec(c.after) ? 'series' : 'single' }; });
+    if (removed.size && S.events.some(e => removed.has(e.id))) {   // occurrences parties avec leur série
+      S.events = S.events.filter(e => !removed.has(e.id));
+      APPLYING = true; try { refreshData(); } finally { APPLYING = false; }
+    }
+  } else if (r.status !== 401) {
+    const why = r.status === 409 ? ['Modifié ailleurs entre-temps', 'rien n’a été écrasé : voici la version de Radicale']
+      : r.status === 422 ? ['Modification refusée', (r.body && r.body.error && r.body.error.refused) || 'donnée invalide']
+      : ['Radicale injoignable', 'modification non enregistrée'];
+    await loadData({ force: true });
+    toast(why[0], null, why[1]);
+  }
+  if (PENDING) { PENDING = false; sync(); }
+}
+
+async function loadData({ force = false } = {}) {
   if (LOADING) return false;
   LOADING = true;
   try {
@@ -69,12 +154,12 @@ async function loadData() {
       return false;
     }
     const firstLoad = !SERVER;
-    if (firstLoad || canonData(r.body) !== SERVER.canon) {
+    if (firstLoad || force || canonData(r.body) !== SERVER.canon) {
       applyServer(r.body);
       if (!firstLoad) { UNDO.length = 0; REDO.length = 0; }   // l'historique décrit un état qui n'existe plus
     }
     const bad = (r.body.errors || []).length;
-    if (bad && firstLoad) toast(`${bad} événement${bad > 1 ? 's' : ''} illisible${bad > 1 ? 's' : ''} ignoré${bad > 1 ? 's' : ''}`, null, 'voir le journal du serveur');
+    if (!force && bad && firstLoad) toast(`${bad} événement${bad > 1 ? 's' : ''} illisible${bad > 1 ? 's' : ''} ignoré${bad > 1 ? 's' : ''}`, null, 'voir le journal du serveur');
     return true;
   } finally { LOADING = false; }
 }
@@ -82,7 +167,7 @@ async function loadData() {
 /* Rechargement (changements faits sur le téléphone…) : jamais pendant une saisie ou un glisser */
 const busy = () => !!document.querySelector('.pop, .fc-event-dragging, .fc-event-resizing, .fc-event-mirror')
   || [...document.querySelectorAll('[id$="-scrim"]')].some(el => !el.hidden);
-function reloadSoon() { if (API.user && !document.hidden && !busy()) loadData(); }
+function reloadSoon() { if (API.user && !document.hidden && !busy() && !SENDING && !PENDING) loadData(); }
 setInterval(reloadSoon, RELOAD_EVERY);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) reloadSoon(); });
 
@@ -115,7 +200,7 @@ async function serverLogin(user, password, remember) {
     if (r.status === 429) return fail(`Trop d’essais. Réessaie dans ${Math.max(1, Math.ceil(r.retryAfter / 60))} min.`);
     return fail(r.status === 502 ? 'Radicale ne répond pas. Réessaie dans un instant.' : 'Serveur injoignable. Réessaie dans un instant.');
   }
-  API.user = r.body.user; API.csrf = r.body.csrf;
+  API.user = r.body.user; API.csrf = r.body.csrf; CAL_PREFIX = r.body.calPrefix || '';
   if (!(await loadData())) { API.user = null; return fail('Connexion réussie, mais les calendriers sont illisibles.'); }
   b.textContent = 'Se connecter'; b.disabled = false; $('l-pass').value = '';
   showUser(API.user); showApp();
@@ -131,7 +216,7 @@ async function serverLogout() {
   $('app').hidden = true; document.querySelector('.fab').hidden = true;   // rien d'affiché tant qu'on ne sait pas
   const r = await api('/api/session');
   if (r.ok) {
-    API.user = r.body.user; API.csrf = r.body.csrf;
+    API.user = r.body.user; API.csrf = r.body.csrf; CAL_PREFIX = r.body.calPrefix || '';
     if (await loadData()) { showUser(API.user); showApp(); return; }
     API.user = null;
   }

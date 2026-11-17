@@ -91,6 +91,19 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   `ghcr.io/chewbacca-368/agenda` ; le Pi la télécharge (docker login ghcr.io avec un jeton `read:packages`).
 - Répétitions non représentables / RECURRENCE-ID : proposition ci-dessous **validée**.
 
+## Décisions validées (17/11/2026, début de phase 3)
+- Calendrier de test créé dans Radicale **depuis l'agenda** (nom affiché « dev-agenda », collection `dev-c-…`). **Verrou côté serveur** : variable
+  `WRITABLE_CALENDARS` du `.env` (motifs, ex. `dev-agenda,dev-*`) ; toute écriture ailleurs est refusée par
+  le backend, les autres calendriers restent visibles en lecture seule (message si on essaie).
+  Un calendrier créé depuis l'agenda reçoit un nom de collection `dev-<aléatoire>` tant que le verrou est actif.
+  Ouverture à tous les calendriers en phase 5, avec mon accord.
+- « Cette occurrence seulement » ⇄ **RECURRENCE-ID** dans la même ressource que la série (format standard),
+  pas un événement séparé ; côté interface, le modèle de la maquette (exdate + événement lié) ne change pas.
+- Suppression : immédiate dans Radicale ; le serveur garde en mémoire (session) l'**iCal brut** supprimé, et
+  « Annuler » le remet tel quel (If-None-Match).
+- Séries non représentables (occurrences calculées) : modifier une occurrence = **cette occurrence seulement**
+  (RECURRENCE-ID) ; la répétition elle-même n'est pas modifiable dans l'agenda.
+
 ## Correspondances iCalendar (validées le 17/11/2026)
 - Événement ⇄ VEVENT ; `id` ⇄ UID (si l'UID contient des caractères non sûrs — `@`, `/`… — l'id est une
   empreinte stable `h…` ; le vrai UID, la ressource et l'ETag sont dans `meta`, hors de `S`) ;

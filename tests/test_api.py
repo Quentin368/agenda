@@ -97,7 +97,7 @@ def test_deconnexion_avec_csrf(client):
 
 def test_session_redonne_le_jeton(client):
     csrf = login(client).json()['csrf']
-    assert client.get('/api/session').json() == {'user': USER, 'csrf': csrf}
+    assert client.get('/api/session').json() == {'user': USER, 'csrf': csrf, 'calPrefix': 'dev-'}
 
 
 def test_radicale_injoignable(seeded, tmp_path):

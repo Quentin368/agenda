@@ -119,7 +119,9 @@ const OPEN_LEN = 3600e3;
 const isOpen = ev => !!ev?.openEnd && !ev.allDay;
 const endTxt = (ev, end) => isOpen(ev) ? ' · fin inconnue' : ` – ${hm(end)}`;
 const calVar = calId => `var(--cal-${(getCal(calId) || { color: 'slate' }).color})`;
-let uidN = 100; const uid = p => `${p}${++uidN}`;
+/* Identifiants uniques (deviennent les UID iCal) : aléatoires, pas un compteur ; crypto.getRandomValues marche aussi en HTTP simple.
+   Un nouveau calendrier prend le préfixe imposé par le serveur (CAL_PREFIX, sync.js) tant que l'écriture est limitée aux calendriers de test. */
+const uid = p => `${p === 'c' && typeof CAL_PREFIX === 'string' ? CAL_PREFIX : ''}${p}-${[...crypto.getRandomValues(new Uint8Array(12))].map(b => b.toString(16).padStart(2, '0')).join('')}`;
 /* ===================== Échéances =====================
    Une échéance, c'est un titre (« Dossier marketing ») rattaché à un événement : le cours où on le rend, l'oral, le partiel…
    Elle prend la date de l'événement et s'affiche dessus, à gauche du titre, avec le compte à rebours ; on la coche quand c'est fait.

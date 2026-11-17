@@ -21,6 +21,12 @@ class Session:
     remember: bool
     ttl: float                 # durée d'inactivité autorisée (secondes)
     expires: float
+    # État serveur de la session : dossier des calendriers, « meta » (id → ressource, ETag…), corbeille pour « Annuler »
+    home: str | None = None
+    meta_events: dict = field(default_factory=dict)
+    meta_cals: dict = field(default_factory=dict)
+    trash: dict = field(default_factory=dict)
+    trash_cals: dict = field(default_factory=dict)
 
     def __repr__(self) -> str:  # jamais le mot de passe dans un journal
         return f'Session(user={self.user!r}, remember={self.remember})'

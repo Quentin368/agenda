@@ -14,7 +14,9 @@ from pydantic import BaseModel, Field
 from . import palette
 from .auth import RateLimiter, Session, SessionStore
 from .config import Settings, settings as default_settings
-from .dav import TIMEOUT, AuthError, DavClient, DavError
+from .changes import Applier, Refused
+from .dav import TIMEOUT, AuthError, Conflict, DavClient, DavError
+from .ical_write import Unsupported
 from .ical_read import Reader, calendar_id
 
 log = logging.getLogger('agenda')
@@ -84,6 +86,9 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
             raise HTTPException(403, 'jeton CSRF invalide')
         return s
 
+    def session_info(s: Session) -> dict:
+        return {'user': s.user, 'csrf': s.csrf, 'calPrefix': cfg.cal_prefix}
+
     def set_cookie(resp: Response, s: Session):
         resp.set_cookie(COOKIE, s.sid, max_age=int(s.ttl) if s.remember else None, httponly=True,
                         samesite='strict', secure=cfg.cookie_secure, path='/')
@@ -111,7 +116,7 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
         s = sessions.create(user, body.password, body.remember)
         set_cookie(response, s)
         log.info('connexion de %r depuis %s', user, ip)
-        return {'user': s.user, 'csrf': s.csrf}
+        return session_info(s)
 
     @app.post('/api/logout')
     async def logout(response: Response, s: Session = Depends(current_csrf)):
@@ -122,13 +127,14 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
     @app.get('/api/session')
     async def session(response: Response, s: Session = Depends(current)):
         set_cookie(response, s)          # « Rester connecté » : le cookie est prolongé à chaque visite
-        return {'user': s.user, 'csrf': s.csrf}
+        return session_info(s)
 
     @app.get('/api/data')
     async def data(s: Session = Depends(current)):
         client = dav(s.user, s.password)
         try:
-            cols = [c for c in await client.collections() if 'VEVENT' in c.components]
+            s.home = s.home or await client.home()
+            cols = [c for c in await client.collections(s.home) if 'VEVENT' in c.components]
             items = await client.all_events(cols)
         except AuthError:            # mot de passe changé entre-temps : on déconnecte
             sessions.delete(s.sid)
@@ -136,7 +142,36 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
         except DavError as e:
             log.error('lecture Radicale impossible : %s', e)
             raise HTTPException(502, 'Radicale injoignable')
-        return build_data(cols, items, cfg.timezone)
+        out = build_data(cols, items, cfg.timezone, cfg)
+        s.meta_events = {k: dict(v) for k, v in out['meta']['events'].items()}
+        s.meta_cals = {k: dict(v) for k, v in out['meta']['calendars'].items()}
+        return out
+
+    @app.post('/api/changes')
+    async def changes(body: dict, s: Session = Depends(current_csrf)):
+        client = dav(s.user, s.password)
+        ap = Applier(cfg, s, client)
+        try:
+            if not s.home:
+                s.home = await client.home()
+            ap.plan(body)
+        except (Refused, Unsupported, KeyError, TypeError) as e:
+            log.warning('lot refusé pour %r : %s', s.user, e)
+            raise HTTPException(422, {'refused': str(e)})
+        try:
+            return await ap.run(body)
+        except Conflict as e:
+            log.info('conflit pour %r : %s', s.user, e)
+            raise HTTPException(409, {'conflict': str(e)})
+        except AuthError:
+            sessions.delete(s.sid)
+            raise HTTPException(401, 'identifiants refusés')
+        except DavError as e:
+            log.error('écriture Radicale impossible : %s', e)
+            raise HTTPException(502, 'Radicale injoignable')
+        except (Unsupported, KeyError, ValueError) as e:
+            log.exception('écriture impossible')
+            raise HTTPException(422, {'refused': str(e)})
 
     @app.get('/healthz', include_in_schema=False)
     async def healthz():
@@ -155,7 +190,7 @@ def _sort_key(name: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', name.casefold()) if not unicodedata.combining(c))
 
 
-def build_data(cols, items, tz: str) -> dict:
+def build_data(cols, items, tz: str, cfg: Settings | None = None) -> dict:
     """Collections + ressources Radicale → { calendars, events, dues, meta, errors } au format de la maquette."""
     reader = Reader(tz)
     calendars, events, meta_ev, meta_cal, errors = [], [], {}, {}, []
@@ -164,7 +199,7 @@ def build_data(cols, items, tz: str) -> dict:
         if cid in meta_cal:          # deux collections au même nom réduit : on garde la première
             continue
         calendars.append({'id': cid, 'name': c.displayname or c.name, 'color': palette.nearest(c.color), 'visible': True})
-        meta_cal[cid] = {'href': c.href, 'ctag': c.ctag, 'colorHex': c.color}
+        meta_cal[cid] = {'href': c.href, 'ctag': c.ctag, 'colorHex': c.color, 'writable': bool(cfg and cfg.writable(c.name))}
     by_href = {meta_cal[k]['href']: k for k in meta_cal}
     for c in cols:
         cid = by_href.get(c.href)
