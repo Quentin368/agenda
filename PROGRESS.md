@@ -1,7 +1,8 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 1 terminée** (17/11/2026), en attente de validation. Prochaine étape : phase 2 (backend en lecture seule).
+**Phase 1 validée** (17/11/2026) et envoyée sur GitHub. **Phase 2 en cours** (backend en lecture seule) :
+questions posées et décisions reportées dans CLAUDE.md (« Décisions validées »).
 
 ## Fait
 

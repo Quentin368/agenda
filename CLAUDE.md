@@ -82,7 +82,15 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - **Abonnements** : lus par le backend (pas de CORS), mis en cache côté backend ; jamais écrits dans Radicale.
 - Image Docker multi-arch arm64, utilisateur non-root, healthcheck, la plus légère possible.
 
-## Correspondances iCalendar (à valider avec moi en début de phase 1)
+## Décisions validées (17/11/2026, début de phase 2)
+- Phase 2 (lecture seule) : toute tentative de création / modification / suppression est **bloquée avec un message**
+  (« l'écriture arrive en phase 3 ») ; ce blocage temporaire sera retiré en phase 3.
+- Sessions : 12 h sans « Rester connecté », 30 jours glissants avec ; durées réglables dans le `.env`.
+- Image Docker **construite par GitHub Actions** (multi-arch, au moins arm64) et publiée en privé sur
+  `ghcr.io/chewbacca-368/agenda` ; le Pi la télécharge (docker login ghcr.io avec un jeton `read:packages`).
+- Répétitions non représentables / RECURRENCE-ID : proposition ci-dessous **validée**.
+
+## Correspondances iCalendar (validées le 17/11/2026)
 - Événement ⇄ VEVENT ; `id` ⇄ UID ; calendrier ⇄ collection Radicale (mapper `anniversaires` → id `'anniv'`).
 - Couleurs : palette de 16 noms de la maquette (`COLORS`) ⇄ `ICAL:calendar-color` (hex). Écrire le hex de la palette ;
   à la lecture, prendre la couleur de palette la plus proche.
@@ -92,10 +100,11 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - Échéances ⇄ **VTODO** (avec `RELATED-TO` vers l'UID de l'événement + le jour d'occurrence en `X-AGENDA-OCC`,
   `STATUS:COMPLETED` pour « faite »), dans un calendrier dédié aux tâches, pour pouvoir viser aussi
   des événements d'abonnement. Bonus : elles apparaissent comme tâches sur le téléphone.
-- Occurrences modifiées venant d'ailleurs (RECURRENCE-ID) : à représenter sans les casser
-  (proposition à me faire : les afficher comme événements liés, et les réécrire dans la même ressource).
-- Répétitions que la maquette ne sait pas représenter (BYSETPOS, « 2ᵉ mardi », etc.) : ne jamais les afficher faux
-  ni les écraser. Proposer une solution (ex. occurrences calculées par le backend, édition de la répétition bloquée).
+- Occurrences modifiées venant d'ailleurs (RECURRENCE-ID) : affichées à leur vraie date comme événements liés à la
+  série (la série reçoit une exdate pour ce jour côté JSON), et réécrites dans la même ressource iCal.
+- Répétitions que la maquette ne sait pas représenter (BYSETPOS, « 2ᵉ mardi », etc.) : occurrences calculées par
+  le backend et envoyées comme événements liés ; jamais affichées fausses ni écrasées. La modification de la
+  répétition est bloquée ; les autres champs (titre, lieu…) restent modifiables (phase 3).
 
 ## Règles d'or (non négociables)
 1. **Fidélité** : en modifiant un événement existant, ne réécrire QUE les champs modifiés ; conserver tout le reste
