@@ -191,9 +191,6 @@ function renameDue(id, t) {
   if (!d || !t || t === d.t) return;
   const snap = snapshot(); d.t = t; refreshData(dueCals(d)); toast('Échéance renommée', snap, { title: t, rest: 'renommée' });
 }
-/* Données de démonstration (static/demo.js) : chargées ici, une fois toutes les fonctions utiles définies.
-   Sans demo.js, l'agenda démarre vide. */
-if (typeof loadDemo === 'function') loadDemo();
 const isBday = ev => ev.rrule?.freq === 'yearly' && ev.allDay && (!!ev.person || ev.cal === 'anniv');
 const ageAt = (ev, d) => { if (!ev.born) return null; const a = d.getFullYear() - ev.born; return a > 0 ? a : null; };
 const personOf = ev => ev.person || ev.title.replace(/^Anniversaire (de |d’|d')/i, '');
@@ -1811,6 +1808,7 @@ function refreshData(ids = 'all') {
   if (UI.hl) UI.toastEv = UI.hl;
   if (UI.hl) { const id = UI.hl, b = UI.hlBurst; UI.hl = null; UI.hlBurst = false; requestAnimationFrame(() => requestAnimationFrame(() => highlight(id, b, !!show))); }
   if (isPage()) { renderPage(); updateTitle(); }
+  if (typeof onDataChanged === 'function') onDataChanged();   // sync.js : compare au dernier état connu du serveur
 }
 /* Après création (ou modification dans la fenêtre) : la page va là où l'événement se trouve.
    Le Planning le garde s'il y figure ; une autre page rend la main au calendrier ; puis le bon jour, et l'heure à l'écran. */
@@ -2434,10 +2432,11 @@ $('l-eye').addEventListener('click', () => {
 $('login-form').addEventListener('submit', e => {
   e.preventDefault();
   const u = $('l-user'), p = $('l-pass'); let bad = false;
+  $('l-pass-err').textContent = 'Saisis ton mot de passe.';   // le message a pu servir à une erreur de connexion
   [[u, 'l-user-err'], [p, 'l-pass-err']].forEach(([el, err]) => { const miss = !el.value.trim(); $(err).hidden = !miss; el.setAttribute('aria-invalid', String(miss)); if (miss && !bad) { el.focus(); bad = true; } });
   if (bad) { const c = $('login-form'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); return; }
   const b = $('l-submit'); b.textContent = 'Connexion…'; b.disabled = true;
-  setTimeout(() => { b.textContent = 'Se connecter'; b.disabled = false; showApp(); }, 700);
+  serverLogin(u.value.trim(), p.value, $('l-keep').checked);   // sync.js : vérifié auprès de Radicale
 });
 
 /* ===================== Thème ===================== */
@@ -2774,7 +2773,7 @@ document.addEventListener('click', e => {
   else if (act === 'close-side' || act === 'close-drawers') document.body.classList.remove('side-on');
   else if (act === 'bdays') toggleBdays();
   else if (act === 'back-cal') backToCal();
-  else if (act === 'logout') showLogin();
+  else if (act === 'logout') serverLogout();
   else if (act === 'search') openSearch();
   else if (act === 'help') { document.body.classList.remove('side-on'); closeSettings(); openHelp(); }
   else if (act === 'memories') toggleMem();

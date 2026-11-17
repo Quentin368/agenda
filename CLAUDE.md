@@ -33,9 +33,10 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   `TZ=Europe/Paris`, secrets dans `.env`. Port proposé pour l'agenda : **8090** (vérifier qu'il est libre).
 - Code dans `~/projets/agenda` (git, dépôt GitHub **privé** `Chewbacca-368/agenda`, envoi via `gh`/HTTPS ;
   auteur des commits = adresse noreply GitHub, réglée localement), déploiement dans `~/docker/agenda`.
-- Frontend : `static/index.html`, `static/app.css`, `static/app.js` ; dépendances embarquées dans
-  `static/vendor/` et `static/fonts/`. Données de démo isolées dans `static/demo.js` (`loadDemo()`, appelée
-  par `app.js` si le fichier est présent) — à supprimer en phase 2.
+- Frontend : `static/index.html`, `static/app.css`, `static/app.js` (la maquette), `static/sync.js` (lien avec
+  le serveur : connexion, chargement, état serveur, synchronisation) ; dépendances embarquées dans
+  `static/vendor/` et `static/fonts/`. Backend : `backend/agenda/` ; tests : `tests/` (`.venv/bin/pytest`).
+- Image Docker : `python:3.13-alpine`, construite par GitHub Actions (`.github/workflows/image.yml`).
 
 ## La maquette : ce qu'il faut savoir (`maquette.html`, ~4 900 lignes, tout-en-un)
 - Dépendances externes : FullCalendar 6.1.15 + locale fr (jsdelivr), polices Google Fonts
@@ -91,7 +92,9 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - Répétitions non représentables / RECURRENCE-ID : proposition ci-dessous **validée**.
 
 ## Correspondances iCalendar (validées le 17/11/2026)
-- Événement ⇄ VEVENT ; `id` ⇄ UID ; calendrier ⇄ collection Radicale (mapper `anniversaires` → id `'anniv'`).
+- Événement ⇄ VEVENT ; `id` ⇄ UID (si l'UID contient des caractères non sûrs — `@`, `/`… — l'id est une
+  empreinte stable `h…` ; le vrai UID, la ressource et l'ETag sont dans `meta`, hors de `S`) ;
+  calendrier ⇄ collection Radicale (mapper `anniversaires` → id `'anniv'`).
 - Couleurs : palette de 16 noms de la maquette (`COLORS`) ⇄ `ICAL:calendar-color` (hex). Écrire le hex de la palette ;
   à la lecture, prendre la couleur de palette la plus proche.
 - `rem` ⇄ VALARM (minutes avant le début ; `'-540'` / `'360'` en déclencheurs relatifs pour les journées).

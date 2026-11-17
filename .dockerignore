@@ -1,0 +1,6 @@
+# Seuls requirements.txt, backend/agenda et static entrent dans l'image
+*
+!requirements.txt
+!backend/agenda/**
+!static/**
+**/__pycache__
