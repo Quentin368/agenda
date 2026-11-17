@@ -8,7 +8,7 @@ Les 11 événements factices de perso, cours et anniversaires ont été supprim�
 `radicale-20261117-145842.tar.gz` prise juste avant). **Projet terminé : les 5 phases sont faites.**
 Ajout demandé ensuite : **copie des abonnements dans Radicale** (calendriers « miroir », `POST /api/subs/mirror`,
 conversion automatique des anciens abonnements comme « MGF »), voir la décision dans CLAUDE.md. Tests : 123 pytest,
-navigateur 32/32. En attente de validation (image construite sur le Pi, `AGENDA_IMAGE=agenda:dev` temporaire).
+navigateur 32/32. **Validé le 17/11/2026** (cours de MGF visibles dans AgenDAV) ; conteneur sur l'image ghcr.io.
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
