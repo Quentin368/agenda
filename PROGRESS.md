@@ -1,10 +1,13 @@
 # Avancement du projet Agenda
 
 ## Phase en cours
-**Phase 2 terminée** (17/11/2026), en attente de validation : conteneur `agenda` lancé sur le port 8090
-avec l'image construite sur le Pi (`agenda:dev`). Pas encore envoyée sur GitHub.
-À faire après validation : envoi sur GitHub (déclenche la construction de l'image sur ghcr.io), puis
-autoriser le Pi à télécharger l'image privée et retirer `AGENDA_IMAGE=agenda:dev` du `.env`.
+**Phase 2 validée** (17/11/2026) et envoyée sur GitHub. L'image est construite par GitHub Actions et publiée
+sur `ghcr.io/chewbacca-368/agenda:latest` ; le Pi est connecté à ghcr.io (`gh auth refresh -s read:packages` puis
+`gh auth token | docker login ghcr.io -u Chewbacca-368 --password-stdin`) et le conteneur `agenda` utilise
+cette image. **Prochaine étape : phase 3 (écriture)**, questions à poser avant de coder.
+
+**Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
+`cd ~/docker/agenda && docker compose pull && docker compose up -d`
 
 ## Fait
 
