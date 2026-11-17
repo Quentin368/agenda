@@ -246,12 +246,15 @@ class DavClient:
         await self._write('DELETE', href, headers={'If-Match': etag} if etag else {})
 
 
-    async def mkcalendar(self, href: str, name: str, color: str, comps=('VEVENT', 'VTODO')) -> None:
+    async def mkcalendar(self, href: str, name: str, color: str, comps=('VEVENT', 'VTODO'), source: str | None = None) -> None:
+        """Nouveau calendrier. Avec `source` : copie d'un abonnement (calendrier « miroir », CS:source = le lien)."""
         comp_xml = ''.join(f'<c:comp name="{c}"/>' for c in comps)
+        src = f'<cs:source>{_xml(source)}</cs:source>' if source else ''
         body = (f'<?xml version="1.0" encoding="utf-8"?><c:mkcalendar xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" '
-                f'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:displayname>{_xml(name)}</d:displayname>'
+                f'xmlns:ic="http://apple.com/ns/ical/" xmlns:cs="http://calendarserver.org/ns/"><d:set><d:prop>'
+                f'<d:displayname>{_xml(name)}</d:displayname>'
                 f'<ic:calendar-color>{_xml(color)}</ic:calendar-color><c:supported-calendar-component-set>'
-                f'{comp_xml}</c:supported-calendar-component-set></d:prop></d:set></c:mkcalendar>')
+                f'{comp_xml}</c:supported-calendar-component-set>{src}</d:prop></d:set></c:mkcalendar>')
         r = await self._write('MKCALENDAR', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
         del r
 
@@ -265,15 +268,18 @@ class DavClient:
         await self._write('MKCOL', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(201,))
 
 
-    async def proppatch(self, href: str, name: str | None = None, color: str | None = None, source: str | None = None) -> None:
+    async def proppatch(self, href: str, name: str | None = None, color: str | None = None, source: str | None = None,
+                        remove_source: bool = False) -> None:
         props = (f'<d:displayname>{_xml(name)}</d:displayname>' if name is not None else '') + \
                 (f'<ic:calendar-color>{_xml(color)}</ic:calendar-color>' if color is not None else '') + \
                 (f'<cs:source>{_xml(source)}</cs:source>' if source is not None else '')
-        if not props:
+        if not props and not remove_source:
             return
         body = (f'<?xml version="1.0" encoding="utf-8"?><d:propertyupdate xmlns:d="DAV:" xmlns:ic="http://apple.com/ns/ical/" '
                 f'xmlns:cs="http://calendarserver.org/ns/">'
-                f'<d:set><d:prop>{props}</d:prop></d:set></d:propertyupdate>')
+                + (f'<d:set><d:prop>{props}</d:prop></d:set>' if props else '')
+                + ('<d:remove><d:prop><cs:source/></d:prop></d:remove>' if remove_source else '')
+                + '</d:propertyupdate>')
         r = await self._write('PROPPATCH', href, body=body.encode(), headers={'Content-Type': 'application/xml; charset=utf-8'}, ok=(207,))
         if '200' not in r.text and 'HTTP/1.1 2' not in r.text:
             raise DavError(f'PROPPATCH {href} refusé')

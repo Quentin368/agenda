@@ -82,7 +82,8 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   Exclure de l'envoi : la visibilité des calendriers (préférence locale) et les calendriers d'abonnement.
 - **Rechargement** des données serveur au retour sur l'onglet / périodiquement, pour voir les changements
   faits sur le téléphone, sans écraser une saisie en cours.
-- **Abonnements** : lus par le backend (pas de CORS), mis en cache côté backend ; jamais écrits dans Radicale.
+- **Abonnements** : lus par le backend (pas de CORS), mis en cache côté backend ; leurs événements sont COPIÉS dans
+  Radicale (calendrier « miroir », voir décision du 17/11/2026 après la phase 5).
 - Image Docker multi-arch arm64, utilisateur non-root, healthcheck, la plus légère possible.
 
 ## Décisions validées (17/11/2026, début de phase 2)
@@ -123,6 +124,14 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   (`WRITABLE_CALENDARS=*`) seulement après mon « go » explicite ; calendriers de test `dev-…` supprimés ensuite
   avec mon accord.
 - **Sauvegarde quotidienne** (crontab de quentin, 3 h) des données Radicale, 14 dernières gardées.
+
+## Décision du 17/11/2026 (après la phase 5) — remplace « jamais copiés » pour les abonnements
+- Les **événements des abonnements sont copiés dans Radicale** : un abonnement est un calendrier normal portant
+  `CS:source` = son lien (calendrier « miroir »). Après chaque lecture du lien, l'interface envoie les événements
+  qu'elle affiche (`POST /api/subs/mirror`) et le serveur met la copie à niveau (ajouts, changements, retraits).
+  Le passé gardé par la maquette survit donc au rechargement et à la disparition du lien ; la copie est sauvegardée
+  chaque nuit et visible sur le téléphone. Toujours en lecture seule dans l'agenda. Un ancien abonnement
+  `CS:subscribed` est converti à sa première mise à jour. Mise à jour seulement quand l'agenda est ouvert.
 
 ## Correspondances iCalendar (validées le 17/11/2026)
 - Événement ⇄ VEVENT ; `id` ⇄ UID (si l'UID contient des caractères non sûrs — `@`, `/`… — l'id est une

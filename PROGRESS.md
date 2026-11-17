@@ -6,6 +6,9 @@
 l'image ghcr.io. Abonnement « MGF 2026-2027 » gardé (collection `dev-c-8766…`, fonctionne normalement).
 Les 11 événements factices de perso, cours et anniversaires ont été supprimés (accord donné ; sauvegarde
 `radicale-20261117-145842.tar.gz` prise juste avant). **Projet terminé : les 5 phases sont faites.**
+Ajout demandé ensuite : **copie des abonnements dans Radicale** (calendriers « miroir », `POST /api/subs/mirror`,
+conversion automatique des anciens abonnements comme « MGF »), voir la décision dans CLAUDE.md. Tests : 123 pytest,
+navigateur 32/32. En attente de validation (image construite sur le Pi, `AGENDA_IMAGE=agenda:dev` temporaire).
 
 **Mettre à jour le conteneur** (après un envoi sur GitHub et la fin du workflow) :
 `cd ~/docker/agenda && docker compose pull && docker compose up -d`
@@ -152,8 +155,8 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   d'édition s'est déjà fermée, la saisie est perdue.
 - Après « cette occurrence seulement », l'occurrence garde jusqu'au prochain rechargement l'id donné par
   l'interface ; au rechargement elle prend son id définitif (`…~r…`) et l'historique « Annuler » est vidé.
-- Abonnements : « le passé reste » (événements retirés de la source mais déjà passés) ne vaut que pendant la
-  session ; après rechargement de la page, seul ce que la source publie encore est affiché.
+- Abonnements : la copie dans Radicale n'est mise à jour que lorsque l'agenda est ouvert (mot de passe en mémoire
+  seulement) ; un événement d'abonnement modifié sur le téléphone est réécrasé à la mise à jour suivante.
 - Import d'une répétition que l'agenda ne sait pas suivre : la maquette n'en montre que la première date, mais le
   fichier entier est enregistré ; après rechargement, toutes les dates apparaissent (occurrences calculées).
 - Résolution DNS puis connexion pour les liens d'abonnement : un nom qui changerait d'adresse entre les deux

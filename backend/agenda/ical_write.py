@@ -233,6 +233,8 @@ class Writer:
         for field, prop in (('person', 'X-AGENDA-PERSON'), ('group', 'X-AGENDA-GROUP')):
             if ch(field):
                 (_set(comp, prop, vText(after[field])) if after.get(field) else _del(comp, prop))
+        if ch('icsUid'):
+            (_set(comp, 'X-AGENDA-ICSUID', vText(after['icsUid'])) if after.get('icsUid') else _del(comp, 'X-AGENDA-ICSUID'))
         if ch('born'):
             (_set(comp, 'X-AGENDA-BORN', str(after['born'])) if after.get('born') else _del(comp, 'X-AGENDA-BORN'))
         if ch('fav'):

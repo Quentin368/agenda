@@ -2399,8 +2399,10 @@ async function syncSub(c) {
   } catch (err) { c.sub.err = subErr(err); }
   finally { SUB_BUSY.delete(c.id); }
   /* Rien de changé : on ne redessine que la ligne du calendrier (l'heure de mise à jour), sans déranger ce qu'on fait */
-  if (sig() === before) { dirty(); renderCalList(); } else refreshData([c.id]);
+  const changed = sig() !== before;
+  if (!changed) { dirty(); renderCalList(); } else refreshData([c.id]);
   if (CE === c) subStatus();
+  if (typeof onSubSynced === 'function') onSubSynced(c, changed);   // sync.js : copie gardée dans Radicale
 }
 async function syncSubs(force = false) {
   for (const c of S.calendars.filter(c => c.sub)) if (force || !c.sub.at || Date.now() - new Date(c.sub.at) > SUB_EVERY - 60e3) await syncSub(c);

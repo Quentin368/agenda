@@ -98,7 +98,7 @@ class Applier:
             for cid in {(ch.get('before') or {}).get('cal'), (ch.get('after') or {}).get('cal')} - {None}:
                 if cid not in new_cals:
                     self.check_writable(cid)
-                    if self.s.meta_cals[cid].get('kind') == 'subscribed':
+                    if self.s.meta_cals[cid].get('kind') in ('subscribed', 'mirror'):
                         raise Refused('les événements d’un abonnement ne s’écrivent pas dans Radicale')
             if ch['op'] != 'create' and ch['id'] not in self.s.meta_events:
                 raise Refused(f'événement inconnu du serveur : {ch["id"]}')
@@ -264,7 +264,16 @@ class Applier:
         for c in cals.get('update', []):
             b, a = c['before'], c['after']
             if b.get('sub') and not a.get('sub'):                      # abonnement arrêté : devient un calendrier
-                await self.dav.delete(self.cal_href(c['id']), None)
+                href = self.cal_href(c['id'])
+                if self.s.meta_cals[c['id']].get('kind') == 'mirror':
+                    # Copie : on retire le lien et la copie ; les événements gardés arrivent juste après (créations)
+                    await self.dav.proppatch(href, name=a['name'] if a['name'] != b['name'] else None,
+                                             color=palette.to_hex(a['color']) if a['color'] != b['color'] else None, remove_source=True)
+                    for it in await self.dav.all_items(href):
+                        await self.dav.delete(it.href, it.etag)
+                    self.s.meta_cals[c['id']] = {**self.s.meta_cals[c['id']], 'kind': 'calendar'}
+                    continue
+                await self.dav.delete(href, None)
                 self.s.meta_cals.pop(c['id'], None)
                 await self.create_calendar({'id': c['id'], 'name': a['name'], 'color': a['color']})
                 continue
@@ -356,10 +365,10 @@ class Applier:
 
     async def create_calendar(self, c):
         href = self.new_cal_href(c['id'])
-        if c.get('sub'):                                                # abonnement : gardé dans Radicale, sans événements
-            await self.dav.mksubscribed(href, c['name'], palette.to_hex(c['color']), c['sub'])
+        if c.get('sub'):            # abonnement : calendrier « miroir » qui garde son lien ; la copie est faite par mirror()
+            await self.dav.mkcalendar(href, c['name'], palette.to_hex(c['color']), comps=('VEVENT',), source=c['sub'])
             self.s.meta_cals[c['id']] = {'href': href, 'ctag': None, 'colorHex': palette.to_hex(c['color']), 'writable': True,
-                                         'kind': 'subscribed'}
+                                         'kind': 'mirror'}
             return
         t = self.s.trash_cals.pop(c['id'], None)
         await self.dav.mkcalendar(href, c['name'], palette.to_hex(c['color']))
@@ -373,7 +382,7 @@ class Applier:
 
     async def delete_calendar(self, cal_id: str):
         href = self.cal_href(cal_id)
-        if self.s.meta_cals[cal_id].get('kind') == 'subscribed':        # désabonnement : rien d'autre à garder
+        if self.s.meta_cals[cal_id].get('kind') in ('subscribed', 'mirror'):   # désabonnement : la copie part avec
             await self.dav.delete(href, None)
             self.s.meta_cals.pop(cal_id, None)
             return
@@ -391,3 +400,62 @@ class Applier:
         for i in self.s.trash_cals[cal_id]['ids']:
             self.s.meta_events.pop(i, None)
         self.s.meta_cals.pop(cal_id, None)
+
+
+# ---------------------------------------------------------------- copie des abonnements dans Radicale
+async def mirror(cfg: Settings, s: Session, dav: DavClient, cal_id: str, events: list[dict]) -> dict:
+    """Met la copie d'un abonnement à niveau : les événements que l'agenda affiche pour ce calendrier (y compris le
+    passé gardé quand la source l'a retiré) deviennent exactement le contenu de la collection dans Radicale.
+    Seuls les changements sont écrits ; un ancien abonnement « sans copie » (CS:subscribed) est d'abord converti."""
+    m = s.meta_cals.get(cal_id)
+    if not m or m.get('kind') not in ('subscribed', 'mirror'):
+        raise Refused(f'pas un abonnement : {cal_id}')
+    if not cfg.writable(_collection(m['href'])):
+        raise Refused(f'calendrier en lecture seule : {cal_id}')
+    w = Writer(cfg.timezone)
+    if m['kind'] == 'subscribed':                       # conversion : même adresse, même nom, même couleur
+        cols = {c.href: c for c in await dav.collections(s.home)}
+        old = cols.get(m['href'])
+        if old is None or not old.source:
+            raise Refused('abonnement introuvable dans Radicale')
+        await dav.delete(m['href'], None)
+        await dav.mkcalendar(m['href'], old.displayname or old.name, old.color or palette.to_hex('slate'),
+                             comps=('VEVENT',), source=old.source)
+        m['kind'] = 'mirror'
+    reader = Reader(cfg.timezone)
+    have = {}
+    for it in await dav.all_items(m['href']):
+        try:
+            for e in reader.read_resource(it.data, cal_id, it.href, it.etag).events:
+                have[e['id']] = (it, e)
+        except Exception:                               # illisible : remplacé
+            have[it.href.rsplit('/', 1)[-1][:-4]] = (it, None)
+    want = {}
+    for e in events:
+        if e.get('cal') != cal_id or not SAFE.match(e.get('id', '')):
+            continue
+        model = {k: v for k, v in e.items() if k != 'repNote'}
+        want[e['id']] = w.first_occurrence(model)
+    added = changed = removed = 0
+    for id_, model in want.items():
+        cur = have.get(id_)
+        if cur and cur[1] is not None and cur[1] == model:
+            continue
+        ics = w.new_resource(id_, model)
+        try:
+            if cur:
+                await dav.put(cur[0].href, ics, cur[0].etag)
+                changed += 1
+            else:
+                await dav.put(f"{m['href']}{id_}.ics", ics, None)
+                added += 1
+        except Conflict:                                # modifié entre-temps : la prochaine mise à jour s'en chargera
+            continue
+    for id_, (it, _) in have.items():
+        if id_ not in want:
+            try:
+                await dav.delete(it.href, it.etag)
+                removed += 1
+            except Conflict:
+                continue
+    return {'ok': True, 'added': added, 'changed': changed, 'removed': removed}

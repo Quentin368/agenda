@@ -32,7 +32,10 @@ FEED = ('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nX-WR-CALNAME:Fac\r\nBEGIN:VEVENT\r\nU
         'DTSTART;TZID=Europe/Paris:20261116T083000\r\nDTEND;TZID=Europe/Paris:20261116T103000\r\nRRULE:FREQ=WEEKLY;BYDAY=MO\r\n'
         'SUMMARY:CM Algorithmique\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n')
 import agenda.main as _main
+FEED_OK = [True]
 async def _fake_fetch(url, client=None):
+    if not FEED_OK[0]:
+        raise _main.IcsError('le lien répond « 404 » (adresse privée, ou introuvable)')
     return FEED
 _main.fetch_ics = _fake_fetch
 cfg = dataclasses.replace(Settings(), radicale_url=URL, static_dir=pathlib.Path(ROOT, 'static'), writable_calendars=('dev-agenda', 'dev-*'))
@@ -169,7 +172,11 @@ async def main():
             sub = await c.js("(() => { const c = S.calendars.find(x => x.sub); return { id: c.id, n: S.events.filter(e => e.cal === c.id).length, err: c.sub.err, ev: S.events.find(e => e.cal === c.id)?.id }; })()")
             check('abonnement lu par le serveur (pas de CORS)', sub['n'] == 1 and not sub['err'], sub)
             pf = httpx.request('PROPFIND', URL + f"{USER}/{sub['id']}/", auth=(USER, PASSWORD), headers={'Depth': '0'})
-            check('abonnement gardé dans Radicale (CS:subscribed)', pf.status_code == 207 and 'subscribed' in pf.text and 'fac.example' in pf.text)
+            check('abonnement gardé dans Radicale (calendrier avec son lien)', pf.status_code == 207 and 'fac.example' in pf.text)
+            pf = pf.text
+            await settle(c, 1.5)
+            items = httpx.request('PROPFIND', URL + f"{USER}/{sub['id']}/", auth=(USER, PASSWORD), headers={'Depth': '1'}).text
+            check('copie de l’abonnement dans Radicale', f"{sub['ev']}.ics" in items and 'source' in pf, sub['ev'])
             await c.js(f"addDue('Partiel', getEv('{sub['ev']}'), '2026-11-30'); true"); await settle(c)
             # 12. import .ics : tout le contenu du fichier
             imp = ('BEGIN:VCALENDAR\\r\\nVERSION:2.0\\r\\nBEGIN:VEVENT\\r\\nUID:billet-7@salle\\r\\nDTSTART;TZID=Europe/Paris:20261212T203000\\r\\n'
@@ -183,6 +190,14 @@ async def main():
             await c('Page.reload'); await asyncio.sleep(3); await settle(c, 1)
             again = await c.js(f"(() => {{ const d = S.dues.find(x => x.t === 'Partiel'); return d && !!getEv(d.ev) && d.ev === '{sub['ev']}'; }})()")
             check('après rechargement : échéance liée au cours d’abonnement', again)
+            # 14. le lien tombe en panne : la copie gardée dans Radicale continue d'afficher le cours
+            FEED_OK[0] = False
+            await c('Page.reload'); await asyncio.sleep(3); await settle(c, 1.5)
+            st = await c.js(f"(() => {{ const c = S.calendars.find(x => x.sub); return {{ ev: !!getEv('{sub['ev']}'), err: c.sub.err }}; }})()")
+            check('lien en panne : événements toujours là (copie), erreur signalée', st['ev'] and st['err'], st)
+            items = httpx.request('PROPFIND', URL + f"{USER}/{sub['id']}/", auth=(USER, PASSWORD), headers={'Depth': '1'}).text
+            check('lien en panne : la copie n’est pas vidée', f"{sub['ev']}.ics" in items)
+            FEED_OK[0] = True
             # 9. rechargement : tout correspond au serveur
             await c.js("loadData().then(() => window.__r = canonState() === SERVER.canon); true"); await settle(c)
             check('après rechargement : S identique au serveur', await c.js("window.__r"))

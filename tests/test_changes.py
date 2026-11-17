@@ -266,33 +266,65 @@ def test_echeances_creer_faire_supprimer_annuler(env):
     del d0
 
 
-def test_abonnement_garde_dans_radicale_puis_arrete(env):
+def test_abonnement_copie_dans_radicale_puis_arrete(env):
     env.data()
     sid = f'dev-c-sub{env.dev}'
     url = 'https://example.org/fac.ics'
     assert env.send({'calendars': {'create': [{'id': sid, 'name': 'Fac', 'color': 'sky', 'sub': url}]}}).json()['ok']
     d = env.data()
     cal = next(c for c in d['calendars'] if c['id'] == sid)
-    assert cal['sub']['url'] == url and cal['name'] == 'Fac' and d['meta']['calendars'][sid]['kind'] == 'subscribed'
-    pf = httpx.request('PROPFIND', env.url + f'{USER}/{sid}/', auth=(USER, PASSWORD), headers={'Depth': '0'}).text
-    assert 'subscribed' in pf
+    assert cal['sub']['url'] == url and cal['name'] == 'Fac' and d['meta']['calendars'][sid]['kind'] == 'mirror'
     r = env.send({'events': [{'op': 'create', 'id': 'e-in-sub', 'after': {**NEW, 'id': 'e-in-sub', 'cal': sid}}]})
-    assert r.status_code == 422                                           # rien d'écrit dans un abonnement
+    assert r.status_code == 422                                           # rien d'écrit à la main dans un abonnement
+    # copie : deux cours, puis la source retire le premier → l'agenda garde le passé, la copie suit l'agenda
+    c1 = {**NEW, 'id': 'u-000000000000a1', 'cal': sid, 'title': 'CM Algo', 'icsUid': 'algo@fac', 'rem': 'none'}
+    c2 = {**c1, 'id': 'u-000000000000a2', 'title': 'TD Réseaux', 'start': '2026-11-23T08:00', 'end': '2026-11-23T10:00',
+          'rrule': {'freq': 'weekly', 'days': [1], 'until': '2027-01-25'}, 'icsUid': 'res@fac', 'repNote': 'note'}
+    m = env.c.post('/api/subs/mirror', json={'cal': sid, 'events': [c1, c2]}, headers=env.h).json()
+    assert (m['added'], m['changed'], m['removed']) == (2, 0, 0)
+    got = evs(env.data(), sid)
+    assert got[c1['id']] == c1 and got[c2['id']] == {k: v for k, v in c2.items() if k != 'repNote'}
+    m = env.c.post('/api/subs/mirror', json={'cal': sid, 'events': [c1, c2]}, headers=env.h).json()
+    assert (m['added'], m['changed'], m['removed']) == (0, 0, 0)          # rien de changé : rien d'écrit
+    m = env.c.post('/api/subs/mirror', json={'cal': sid, 'events': [c2]}, headers=env.h).json()
+    assert m['removed'] == 1 and set(evs(env.data(), sid)) == {c2['id']}
+    assert env.c.post('/api/subs/mirror', json={'cal': env.dev, 'events': []}, headers=env.h).status_code == 422
+    # changer de lien
     url2 = 'https://example.org/fac2.ics'
     assert env.send({'calendars': {'update': [{'id': sid, 'before': {'name': 'Fac', 'color': 'sky', 'sub': url},
                                                 'after': {'name': 'Fac S2', 'color': 'blue', 'sub': url2}}]}}).json()['ok']
     cal = next(c for c in env.data()['calendars'] if c['id'] == sid)
     assert (cal['name'], cal['color'], cal['sub']['url']) == ('Fac S2', 'blue', url2)
     # « Arrêter l'abonnement » en gardant ses événements : devient un calendrier normal
-    ev = {**NEW, 'id': 'e-garde', 'cal': sid}
+    keep = {k: v for k, v in c2.items() if k != 'repNote'}
     r = env.send({'calendars': {'update': [{'id': sid, 'before': {'name': 'Fac S2', 'color': 'blue', 'sub': url2},
                                              'after': {'name': 'Fac S2', 'color': 'blue'}}]},
-                  'events': [{'op': 'create', 'id': ev['id'], 'after': ev}]})
+                  'events': [{'op': 'create', 'id': keep['id'], 'after': keep}]})
     assert r.json()['ok']
     d = env.data()
     cal = next(c for c in d['calendars'] if c['id'] == sid)
-    assert 'sub' not in cal and evs(d, sid)['e-garde'] == ev
-    assert env.send({'calendars': {'delete': [{'id': sid}]}, 'events': [{'op': 'delete', 'id': ev['id'], 'before': ev}]}).json()['ok']
+    assert 'sub' not in cal and d['meta']['calendars'][sid]['kind'] == 'calendar' and evs(d, sid) == {keep['id']: keep}
+    after = {**keep, 'title': 'TD Réseaux (gardé)'}
+    assert env.send({'events': [{'op': 'update', 'id': keep['id'], 'before': keep, 'after': after}]}).json()['ok']
+    assert env.send({'calendars': {'delete': [{'id': sid}]}, 'events': [{'op': 'delete', 'id': keep['id'], 'before': after}]}).json()['ok']
+
+
+def test_ancien_abonnement_converti_en_copie(env):
+    """Un abonnement créé avant la copie (collection CS:subscribed, comme « MGF ») est converti à sa mise à jour."""
+    sid = f'dev-c-old{env.dev}'
+    body = ('<?xml version="1.0" encoding="utf-8"?><d:mkcol xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/" '
+            'xmlns:ic="http://apple.com/ns/ical/"><d:set><d:prop><d:resourcetype><d:collection/><cs:subscribed/></d:resourcetype>'
+            '<d:displayname>MGF</d:displayname><ic:calendar-color>#6d48d8</ic:calendar-color>'
+            '<cs:source>https://example.org/mgf.ics</cs:source></d:prop></d:set></d:mkcol>')
+    assert httpx.request('MKCOL', env.url + f'{USER}/{sid}/', content=body.encode(), auth=(USER, PASSWORD)).status_code == 201
+    d = env.data()
+    assert d['meta']['calendars'][sid]['kind'] == 'subscribed'
+    ev = {**NEW, 'id': 'u-00000000000mgf', 'cal': sid, 'icsUid': 'x@mgf', 'rem': 'none'}
+    assert env.c.post('/api/subs/mirror', json={'cal': sid, 'events': [ev]}, headers=env.h).json()['added'] == 1
+    d = env.data()
+    cal = next(c for c in d['calendars'] if c['id'] == sid)
+    assert d['meta']['calendars'][sid]['kind'] == 'mirror' and (cal['name'], cal['color'], cal['sub']['url']) == ('MGF', 'violet', 'https://example.org/mgf.ics')
+    assert evs(d, sid) == {ev['id']: ev}
 
 
 def test_desabonnement(env):

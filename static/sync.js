@@ -2,13 +2,15 @@
    Radicale reste l'unique source de vérité. L'interface garde le « dernier état connu du serveur » (SERVER) ;
    après chaque modification (refreshData → onDataChanged), elle compare S à cet état et envoie la différence
    (créations / modifications / suppressions). « Annuler » restaure un instantané : la différence repart d'elle-même.
-   Ne comptent pas : la visibilité des calendriers (préférence locale) et les ÉVÉNEMENTS des abonnements (relus du lien,
-   jamais écrits) ; la liste des abonnements (nom, couleur, adresse), elle, est gardée dans Radicale.
+   Ne comptent pas : la visibilité des calendriers (préférence locale) et les ÉVÉNEMENTS des abonnements : ils sont relus
+   depuis leur lien, puis leur COPIE est mise à niveau dans Radicale (mirrorSub), à part ; la liste des abonnements
+   (nom, couleur, adresse) passe par la différence comme les autres calendriers.
    En cas de conflit (modifié ailleurs) ou de refus, rien n'est écrasé : message, puis rechargement depuis Radicale. */
 const API = { user: null, csrf: null };
 let CAL_PREFIX = '';                                 // imposé par le serveur aux nouveaux calendriers (« dev- » pendant les essais)
 let SENDING = false, PENDING = false;
-const IMPORT_RAW = new Map();                        // id → iCal brut d'un événement importé (gardé en entier dans Radicale)
+const IMPORT_RAW = new Map();
+const MIRRORED = new Set(), MIRROR_BUSY = new Set();   // abonnements dont la copie est à jour / en cours d'envoi                        // id → iCal brut d'un événement importé (gardé en entier dans Radicale)
 let SERVER = null;                                  // { data, canon } : dernières données reçues du serveur
 let SRV_META = { events: {}, calendars: {} };       // ressource, ETag, UID… de chaque événement (hors de S : une copie ne les emporte pas)
 let APPLYING = false, LOADING = false;
@@ -45,10 +47,11 @@ function applyServer(data) {
     if (c.sub && old && old.sub.url === c.sub.url) c.sub = { ...old.sub };   // déjà lu : on garde son état
     return { ...c, visible: vis.has(c.id) ? vis.get(c.id) : true };
   });
+  // Abonnement déjà relu dans cette page : ses événements frais restent ; sinon, ceux de la copie gardée dans Radicale
   const subIds = new Set(cals.filter(c => c.sub && was.has(c.id) && was.get(c.id).sub.url === c.sub.url).map(c => c.id));
   const subEvs = S.events.filter(e => subIds.has(e.cal));
   S.calendars = cals;
-  S.events = [...clone(data.events).map(norm), ...subEvs];
+  S.events = [...clone(data.events).filter(e => !subIds.has(e.cal)).map(norm), ...subEvs];
   S.dues = clone(data.dues || []);
   SERVER = { data, canon: canonData(data) };
   SRV_META = data.meta || { events: {}, calendars: {} };
@@ -79,7 +82,8 @@ function diff() {
   const cals = S.calendars.map(c => clone(calShape(c)));
   const evs = S.events.filter(e => !subIds.has(e.cal)).map(clone);
   const sc = new Map(SERVER.data.calendars.map(c => [c.id, calShape(c)]));
-  const se = new Map(SERVER.data.events.map(e => [e.id, norm(clone(e))]));
+  const srvSub = new Set(SERVER.data.calendars.filter(c => c.sub).map(c => c.id));
+  const se = new Map(SERVER.data.events.filter(e => !srvSub.has(e.cal)).map(e => [e.id, norm(clone(e))]));
   const nowC = new Map(cals.map(c => [c.id, c])), nowE = new Map(evs.map(e => [e.id, e]));
   const out = { calendars: { create: [], update: [], delete: [] }, events: [] };
   const shape = ({ id, ...c }) => c;
@@ -149,6 +153,7 @@ async function sync(n = UNDO.length) {
     d.batch.calendars.create.forEach(c => { SRV_META.calendars[c.id] = { writable: true, kind: c.sub ? 'subscribed' : 'calendar' }; });
     d.batch.calendars.update.filter(c => c.before.sub && !c.after.sub).forEach(c => { SRV_META.calendars[c.id] = { writable: true, kind: 'calendar' }; });
     d.batch.events.filter(c => c.op === 'create').forEach(c => { SRV_META.events[c.id] = { kind: c.overrideOf ? 'override' : rec(c.after) ? 'series' : 'single' }; });
+    d.batch.calendars.create.filter(c => c.sub).forEach(c => { const cal = getCal(c.id); if (cal) mirrorSub(cal); });
     if (removed.size && S.events.some(e => removed.has(e.id))) {   // occurrences parties avec leur série
       S.events = S.events.filter(e => !removed.has(e.id));
       APPLYING = true; try { refreshData(); } finally { APPLYING = false; }
@@ -164,6 +169,21 @@ async function sync(n = UNDO.length) {
     toast(why[0], null, why[1]);
   }
   if (PENDING) { PENDING = false; sync(); }
+}
+
+/* Copie d'un abonnement dans Radicale : les événements affichés (passé gardé compris) deviennent son contenu */
+async function mirrorSub(c) {
+  const m = SRV_META.calendars[c.id];
+  if (!c.sub || !m || !['subscribed', 'mirror'].includes(m.kind) || !m.writable || MIRROR_BUSY.has(c.id)) return;
+  MIRROR_BUSY.add(c.id);
+  try {
+    const r = await api('/api/subs/mirror', { method: 'POST', body: JSON.stringify({ cal: c.id, events: S.events.filter(e => e.cal === c.id).map(clone) }) });
+    if (r.ok) { MIRRORED.add(c.id); m.kind = 'mirror'; }
+  } finally { MIRROR_BUSY.delete(c.id); }
+}
+function onSubSynced(c, changed) {
+  if (!API.user || c.sub.err) return;          // lien en erreur : la copie garde l'état précédent
+  if (changed || !MIRRORED.has(c.id)) mirrorSub(c);
 }
 
 async function loadData({ force = false } = {}) {

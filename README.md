@@ -36,7 +36,7 @@ navigateur ──HTTP──▶ conteneur « agenda » (port 8090) ──CalDAV�
 | « Cette occurrence seulement » | occurrence modifiée (`RECURRENCE-ID`) dans le même fichier |
 | Anniversaire (personne, année, favori, groupe, cadeaux) | propriétés `X-AGENDA-*` (ignorées sans perte par le téléphone) |
 | Échéance | tâche `VTODO` dans la collection `echeances` (visible comme tâche sur le téléphone) |
-| Abonnement (lien .ics) | collection « abonnée » (`CS:subscribed`) ; ses événements ne sont jamais copiés |
+| Abonnement (lien .ics) | calendrier portant son lien (`CS:source`) ; ses événements y sont **copiés** à chaque lecture du lien (gardés si le lien disparaît, sauvegardés, visibles sur le téléphone) |
 
 ---
 
@@ -139,7 +139,8 @@ sur GitHub).
 | Déconnecté sans raison | normal après une mise à jour ou un redémarrage du conteneur ou du Pi (mot de passe gardé en mémoire seulement). |
 | « Calendrier en lecture seule » | le verrou `WRITABLE_CALENDARS` du `.env` ne l'autorise pas. |
 | « Modifié ailleurs entre-temps » | quelqu'un (le téléphone, AgenDAV) a modifié le même élément : la version de Radicale est affichée, refais ta modification. |
-| Un abonnement est en erreur | le message dit pourquoi (lien mort, pas un .ics…). Seules les adresses publiques d'Internet sont acceptées (pas le réseau local). |
+| Un abonnement est en erreur | le message dit pourquoi (lien mort, pas un .ics…). Seules les adresses publiques d'Internet sont acceptées (pas le réseau local). Les événements déjà copiés restent affichés. |
+| Un abonnement n'est plus à jour sur le téléphone | la copie n'est mise à jour que quand l'agenda est ouvert (il relit le lien à l'ouverture puis toutes les 30 min). |
 | « N événements illisibles ignorés » | un fichier de Radicale est mal formé : `docker logs agenda` donne son nom ; il n'est pas modifié. |
 | `docker compose pull` refusé (`denied`) | refaire l'étape 1 de l'installation (droit `read:packages` et `docker login ghcr.io`). |
 | La sauvegarde ne se fait pas | `crontab -l` doit montrer la ligne ; lire `~/docker/agenda/sauvegardes/sauvegarde.log`. |

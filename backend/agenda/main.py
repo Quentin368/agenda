@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from . import palette
 from .auth import RateLimiter, Session, SessionStore
 from .config import Settings, settings as default_settings
-from .changes import Applier, Refused
+from .changes import Applier, Refused, mirror
 from .dav import TIMEOUT, AuthError, Conflict, DavClient, DavError
 from .ical_write import Unsupported
 from .ical_read import Reader, calendar_id
@@ -158,7 +158,7 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
         try:
             s.home = s.home or await client.home()
             allc = await client.collections(s.home)
-            cols = [c for c in allc if c.kind == 'calendar' and 'VEVENT' in c.components]
+            cols = [c for c in allc if c.kind == 'calendar' and 'VEVENT' in c.components]   # dont les copies d'abonnement
             subs = [c for c in allc if c.kind == 'subscribed' and c.source]
             tasks = next((c for c in allc if c.kind == 'calendar' and c.components == ['VTODO'] and c.name == cfg.cal_prefix + TASKS), None)
             items = await client.all_events(cols)
@@ -175,6 +175,20 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
         s.meta_dues = {k: dict(v) for k, v in out['meta']['dues'].items()}
         s.tasks_href = tasks.href if tasks else None
         return out
+
+    @app.post('/api/subs/mirror')
+    async def subs_mirror(body: dict, s: Session = Depends(current_csrf)):
+        """Copie d'un abonnement dans Radicale (gardée même si le lien disparaît, sauvegardée chaque nuit)."""
+        try:
+            return await mirror(cfg, s, dav(s.user, s.password), str(body.get('cal', '')), list(body.get('events') or []))
+        except Refused as e:
+            raise HTTPException(422, {'refused': str(e)})
+        except AuthError:
+            sessions.delete(s.sid)
+            raise HTTPException(401, 'identifiants refusés')
+        except DavError as e:
+            log.error('copie d’abonnement impossible : %s', e)
+            raise HTTPException(502, 'Radicale injoignable')
 
     @app.get('/api/ics')
     async def ics(url: str, s: Session = Depends(current)):
@@ -238,10 +252,13 @@ def build_data(cols, items, tz: str, cfg: Settings | None = None, subs=(), tasks
         if cid in meta_cal:          # deux collections au même nom réduit : on garde la première
             continue
         cal = {'id': cid, 'name': c.displayname or c.name, 'color': palette.nearest(c.color), 'visible': True}
-        if c.kind == 'subscribed':   # abonnement : les événements sont lus par l'interface via /api/ics
+        kind = c.kind
+        if c.source:                 # abonnement : relu depuis son lien par l'interface (via /api/ics)
             cal['sub'] = {'url': c.source, 'at': None, 'n': 0, 'err': None}
+            if kind == 'calendar':   # calendrier « miroir » : ses événements sont la copie gardée dans Radicale
+                kind = 'mirror'
         calendars.append(cal)
-        meta_cal[cid] = {'href': c.href, 'ctag': c.ctag, 'colorHex': c.color, 'writable': writable(c.name), 'kind': c.kind}
+        meta_cal[cid] = {'href': c.href, 'ctag': c.ctag, 'colorHex': c.color, 'writable': writable(c.name), 'kind': kind}
     by_href = {meta_cal[k]['href']: k for k in meta_cal}
     for c in cols:
         cid = by_href.get(c.href)
