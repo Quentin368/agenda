@@ -1,6 +1,6 @@
 """Radicale jetable pour les tests d'intégration (dossier temporaire, utilisateur de test).
 
-Jamais la pile ~/docker/test-radicale : les tests fabriquent leurs propres calendriers.
+Jamais la pile ~/docker/radicale : les tests fabriquent leurs propres calendriers.
 """
 import os
 import socket

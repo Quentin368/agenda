@@ -3,7 +3,7 @@
 # Radicale reste l'unique source de vérité : ceci n'est qu'une copie de sécurité. Rien n'est modifié chez Radicale.
 # Restaurer : voir le README (section « Sauvegarde et restauration »).
 set -eu
-SOURCE=/home/quentin/docker/test-radicale     # pile Radicale (lue seulement)
+SOURCE=/home/quentin/docker/radicale          # pile Radicale (lue seulement)
 DEST=/home/quentin/docker/agenda/sauvegardes  # archives
 GARDER=14                                     # nombre d'archives conservées
 

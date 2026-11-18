@@ -68,7 +68,7 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   remis à zéro, point d'accroche `onDataChanged` à la fin de `refreshData`).
 - **Docker** : `Dockerfile` (python:3.13-alpine, 2 étapes, 102 Mo, uid 1000, healthcheck), `.dockerignore`,
   `.github/workflows/image.yml` (tests puis image arm64 sur ghcr.io/chewbacca-368/agenda).
-  Pile `~/docker/agenda` : `compose.yaml` (réseau externe `test-radicale_default`, conteneur en lecture seule,
+  Pile `~/docker/agenda` : `compose.yaml` (réseau externe `radicale_default`, conteneur en lecture seule,
   sans privilèges), `.env` (chmod 600).
 - **Tests** (58, `pytest`) : conversion (fuseaux, UTC, flottant, journées, durées et changement d'heure, fin
   inconnue, rappels, X-AGENDA-*, répétitions représentables ou calculées, RECURRENCE-ID, ids, couleurs),

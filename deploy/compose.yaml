@@ -24,4 +24,4 @@ services:
 networks:
   radicale:
     external: true
-    name: test-radicale_default      # le réseau de la pile Radicale : l'agenda appelle http://radicale:5232/
+    name: radicale_default      # le réseau de la pile Radicale : l'agenda appelle http://radicale:5232/

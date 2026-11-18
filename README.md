@@ -42,7 +42,7 @@ navigateur ──HTTP──▶ conteneur « agenda » (port 8090) ──CalDAV�
 
 ## Installation (sur un Pi neuf ou après une réinstallation)
 
-Prérequis : Docker + Compose, la pile Radicale (`~/docker/test-radicale`) déjà lancée, et l'outil GitHub `gh`.
+Prérequis : Docker + Compose, la pile Radicale (`~/docker/radicale`) déjà lancée, et l'outil GitHub `gh`.
 
 1. **Autoriser le Pi à télécharger l'image privée** (une seule fois) :
    ```sh
@@ -59,7 +59,7 @@ Prérequis : Docker + Compose, la pile Radicale (`~/docker/test-radicale`) déj�
    cp ~/projets/agenda/deploy/.env.example .env && chmod 600 .env   # puis relire/ajuster .env
    docker compose pull && docker compose up -d
    ```
-   Le conteneur rejoint le réseau Docker de Radicale (`test-radicale_default`) et l'appelle à `http://radicale:5232/`.
+   Le conteneur rejoint le réseau Docker de Radicale (`radicale_default`) et l'appelle à `http://radicale:5232/`.
 
 3. **Vérifier** : `docker ps` doit montrer `agenda` « (healthy) », puis ouvre http://raspberryquentin:8090.
 
@@ -115,7 +115,7 @@ Dans Dockge : bouton « Mettre à jour » de la pile `agenda`.
 
 **Restaurer** (remet Radicale dans l'état de l'archive ; ce qui a été fait depuis est perdu) :
 ```sh
-cd ~/docker/test-radicale
+cd ~/docker/radicale
 docker compose stop                                   # arrêter Radicale pendant la copie
 mv data data.avant-restauration                       # garder l'état actuel, au cas où
 tar -xzf ~/docker/agenda/sauvegardes/radicale-AAAAMMJJ-HHMMSS.tar.gz data
@@ -133,7 +133,7 @@ sur GitHub).
 | Symptôme | Que faire |
 | --- | --- |
 | La page ne s'ouvre pas | `docker ps` : le conteneur `agenda` tourne-t-il ? `docker logs --tail 50 agenda` pour voir ses messages. Tailscale est-il connecté sur ton appareil ? |
-| « Radicale ne répond pas » | `docker ps` : `test-radicale` tourne-t-il ? Les deux conteneurs sont-ils sur le réseau `test-radicale_default` (`docker network inspect test-radicale_default`) ? |
+| « Radicale ne répond pas » | `docker ps` : `radicale` tourne-t-il ? Les deux conteneurs sont-ils sur le réseau `radicale_default` (`docker network inspect radicale_default`) ? |
 | « Identifiant ou mot de passe incorrect » | ce sont ceux de Radicale (les mêmes que dans AgenDAV / DAVx⁵). |
 | « Trop d'essais » | attendre le délai indiqué (15 min), ou redémarrer le conteneur (`docker compose restart` dans `~/docker/agenda`). |
 | Déconnecté sans raison | normal après une mise à jour ou un redémarrage du conteneur ou du Pi (mot de passe gardé en mémoire seulement). |

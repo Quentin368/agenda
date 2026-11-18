@@ -11,7 +11,7 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - Je débute en administration Linux : explique simplement, en français, ce que tu fais et pourquoi.
 - Avant toute commande `sudo`, explique pourquoi elle est nécessaire.
 - Ne modifie rien en dehors de `~/projets/agenda` et `~/docker/agenda` sans me demander.
-  En particulier, ne touche pas à la pile `~/docker/test-radicale` ni aux autres services.
+  En particulier, ne touche pas à la pile `~/docker/radicale` ni aux autres services.
 - Ne m'affiche jamais de mot de passe ou de secret ; génère les secrets directement dans des fichiers (`.env`, chmod 600).
 - Avance par phases (voir plus bas). À la fin de chaque phase : tests, démonstration, commit git,
   mise à jour de `PROGRESS.md`, puis tu attends mon retour.
@@ -21,8 +21,8 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - Raspberry Pi 5, 8 Go, arm64, Debian 13 (trixie), Docker + Compose. Utilisateur `quentin` (uid/gid 1000).
 - Accès uniquement via Tailscale en HTTP simple : `http://raspberryquentin:<port>` (pas de TLS, pas de reverse proxy).
   Le cookie de session ne peut donc pas exiger HTTPS (le rendre configurable).
-- Radicale : pile `~/docker/test-radicale`, conteneur `test-radicale`, service `radicale`, port 5232,
-  réseau Docker `test-radicale_default` (l'agenda doit le rejoindre en réseau externe et appeler `http://radicale:5232/`).
+- Radicale : pile `~/docker/radicale`, conteneur `radicale`, service `radicale`, port 5232,
+  réseau Docker `radicale_default` (l'agenda doit le rejoindre en réseau externe et appeler `http://radicale:5232/`).
   Auth htpasswd bcrypt, utilisateur `quentin`, rights `owner_only`.
   Calendriers existants : `/quentin/perso/`, `/quentin/anniversaires/`, `/quentin/cours/` (VEVENT,VTODO),
   avec des événements « (test) ». Un événement a aussi été créé depuis AgenDAV.
