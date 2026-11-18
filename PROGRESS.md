@@ -143,6 +143,24 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   sauvegardes`, 14 gardées, chmod 600) via la crontab de quentin à 3 h ; première archive faite le 17/11.
 - Tests : 122 pytest ; navigateur 29/29.
 
+### Phase 6 — Application installable (PWA) — terminée le 18/11/2026, en attente de validation sur le téléphone
+- `static/manifest.webmanifest` (Agenda, standalone, start_url/scope `/`, couleurs de fond de l'agenda), icônes
+  `static/icons/` (192/512 « any » et « maskable », dessinées depuis le favicon de Quentin sur `#171a2c`, avec un
+  liseré papier : `icons/app-icon.svg`), `meta theme-color` clair/sombre + `syncThemeColor()` (suit le thème choisi).
+- `static/sw.js` : met en cache l'interface seulement (jamais `/api`, ni `/healthz`) ; réseau d'abord, copie
+  rafraîchie à chaque chargement, cache seulement hors connexion ; nettoyage des anciens caches. Enregistré par
+  `sync.js` seulement en contexte sûr (HTTPS / localhost).
+- Écran « Pi injoignable » (`#offline`, mise en page de l'écran de connexion) au lancement si le Pi ne répond pas
+  (réseau coupé, ou 502/503/504 de Tailscale Serve) ; essai automatique toutes les 20 s et au retour du réseau.
+- Limitation des essais derrière Tailscale Serve : `backend/agenda/proxy.py` — `X-Forwarded-For` (dernière adresse)
+  cru seulement depuis un proxy de confiance (`TRUSTED_PROXIES`, `auto` = passerelle Docker lue dans
+  `/proc/net/route`). Vérifié sur le Pi : via HTTPS → vraie adresse ; accès direct avec un faux en-tête → ignoré.
+- Tests : 134 pytest (+ `tests/test_proxy_pwa.py`) ; `tools/e2e_pwa.py` (vrai Chromium + vrai serveur) 10/10 :
+  installable selon Chrome, service worker actif, cache sans /api, mise à jour au rechargement, hors connexion,
+  retour du Pi ; `tools/e2e_navigateur.py` 32/32.
+- Reste (étape 3 de la demande) : après validation de l'installation, proposer `COOKIE_SECURE=true` et le port 8090
+  limité à `127.0.0.1` — demander avant.
+
 ## Reste à faire
 - Rien d'obligatoire. Idées si besoin : copier de temps en temps une sauvegarde hors du Pi (les archives sont sur
   le même disque que Radicale) ; corriger la largeur de la colonne des heures (voir problèmes connus).

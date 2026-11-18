@@ -5,7 +5,8 @@ Un agenda complet (semaine, mois, année, anniversaires, souvenirs, échéances,
 aucun événement de son côté. Ce que tu fais dans l'agenda se voit aussitôt dans AgenDAV et sur ton
 téléphone (DAVx⁵), et inversement.
 
-- Adresse : **http://raspberryquentin:8090** (via Tailscale)
+- Adresse : **https://raspberryquentin.tail340eef.ts.net** (HTTPS via Tailscale Serve, installable sur le
+  téléphone) — ou http://raspberryquentin:8090 (accès direct)
 - Identifiants : ceux de Radicale
 - Code : `~/projets/agenda` (GitHub privé `Chewbacca-368/agenda`) — Déploiement : `~/docker/agenda`
 
@@ -72,6 +73,24 @@ Prérequis : Docker + Compose, la pile Radicale (`~/docker/radicale`) déjà lan
 
 ---
 
+## Application sur le téléphone (Android)
+
+L'agenda s'installe comme une application (PWA) — **seulement depuis l'adresse HTTPS** (le navigateur refuse en
+HTTP simple). Tailscale doit être actif sur le téléphone.
+
+1. Dans Chrome, ouvrir **https://raspberryquentin.tail340eef.ts.net** et se connecter (« Rester connecté »).
+2. Menu ⋮ → **Installer l'application** (ou « Ajouter à l'écran d'accueil »).
+3. L'icône « Agenda » apparaît ; l'appli s'ouvre en plein écran, sans barre d'adresse.
+
+- **Hors connexion** (Pi éteint, Tailscale coupé…) : l'appli s'ouvre quand même sur l'écran « Pi injoignable »,
+  et réessaie seule quand le réseau revient. Aucune donnée n'est gardée sur le téléphone : seule l'interface
+  (pages, styles, polices) est mise en cache par le *service worker* (`static/sw.js`), jamais `/api`.
+- **Mises à jour** : rien à faire, une nouvelle version déployée est prise au prochain lancement / rechargement.
+- **Désinstaller** : appui long sur l'icône → Désinstaller (ou Paramètres → Applications).
+- Pour **DAVx⁵**, l'adresse HTTPS de Radicale est `https://raspberryquentin.tail340eef.ts.net:8443`.
+
+---
+
 ## Réglages (`~/docker/agenda/.env`)
 
 | Variable | Rôle | Valeur |
@@ -80,6 +99,7 @@ Prérequis : Docker + Compose, la pile Radicale (`~/docker/radicale`) déjà lan
 | `SESSION_HOURS` / `REMEMBER_DAYS` | durée de session sans activité, sans / avec « Rester connecté » | `12` / `30` |
 | `COOKIE_SECURE` | cookie réservé à HTTPS (laisser `false` en HTTP simple) | `false` |
 | `LOGIN_MAX_FAILURES` / `LOGIN_WINDOW_MINUTES` | limitation des essais de connexion | `5` / `15` |
+| `TRUSTED_PROXIES` | proxy dont on croit `X-Forwarded-For` (vraie adresse derrière Tailscale Serve, pour la limitation des essais). `auto` = passerelle Docker du conteneur | `auto` |
 | `WRITABLE_CALENDARS` | **verrou d'écriture** : collections modifiables. `*` = toutes ; `dev-agenda,dev-*` = essais seulement ; vide = lecture seule | `*` |
 
 Après une modification du `.env` : `cd ~/docker/agenda && docker compose up -d` (le conteneur est recréé).
@@ -132,6 +152,8 @@ sur GitHub).
 
 | Symptôme | Que faire |
 | --- | --- |
+| L'appli affiche « Pi injoignable » | Tailscale est-il activé sur le téléphone ? Le Pi est-il allumé ? `tailscale serve status` sur le Pi doit montrer le relais vers `localhost:8090`. |
+| « Installer l'application » n'apparaît pas | passer par l'adresse **https://…ts.net** (pas http), puis recharger une fois la page. |
 | La page ne s'ouvre pas | `docker ps` : le conteneur `agenda` tourne-t-il ? `docker logs --tail 50 agenda` pour voir ses messages. Tailscale est-il connecté sur ton appareil ? |
 | « Radicale ne répond pas » | `docker ps` : `radicale` tourne-t-il ? Les deux conteneurs sont-ils sur le réseau `radicale_default` (`docker network inspect radicale_default`) ? |
 | « Identifiant ou mot de passe incorrect » | ce sont ceux de Radicale (les mêmes que dans AgenDAV / DAVx⁵). |

@@ -34,6 +34,8 @@ class Settings:
     # Vide (par défaut) : aucune écriture, l'agenda est en lecture seule.
     writable_calendars: tuple = field(default_factory=lambda: tuple(
         p.strip() for p in os.environ.get('WRITABLE_CALENDARS', '').split(',') if p.strip()))
+    # Proxy de confiance (Tailscale Serve) : « auto » = la passerelle Docker du conteneur ; « none » ; ou une liste
+    trusted_proxies: str = field(default_factory=lambda: os.environ.get('TRUSTED_PROXIES', 'auto'))
     # Fichiers de l'interface
     static_dir: Path = field(default_factory=lambda: Path(os.environ.get('STATIC_DIR', Path(__file__).resolve().parents[2] / 'static')))
 

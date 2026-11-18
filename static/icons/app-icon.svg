@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <!-- icône d'application : liseré papier pour détacher la page du fond sombre -->
+  <path d="M24 12H72A14 14 0 0 1 86 26V64L62 88H24A14 14 0 0 1 10 74V26A14 14 0 0 1 24 12Z" fill="none" stroke="#f7f6f1" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M24 12H72A14 14 0 0 1 86 26V64L62 88H24A14 14 0 0 1 10 74V26A14 14 0 0 1 24 12Z" fill="#f7f6f1" stroke="#16192a" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M13 36V26A11 11 0 0 1 24 15H72A11 11 0 0 1 83 26V36Z" fill="#16192a"/>
+  <path d="M86 64H70A8 8 0 0 0 62 72V88" fill="#dfe1e7" stroke="#16192a" stroke-width="6" stroke-linejoin="round"/>
+  <rect x="24" y="48" width="30" height="6" rx="3" fill="#3346f0"/>
+  <rect x="24" y="62" width="22" height="6" rx="3" fill="#c4c7cf"/>
+</svg>

@@ -2463,6 +2463,15 @@ function setTheme(t, anim) {
   if (anim) { r.classList.add('theme-anim'); clearTimeout(r._ta); r._ta = setTimeout(() => r.classList.remove('theme-anim'), 450); } if (t === 'system') delete r.dataset.theme; else r.dataset.theme = t;
   document.querySelectorAll('[data-theme-set]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.themeSet === t)));
   try { localStorage.setItem('agenda-theme', t); } catch (e) {}
+  syncThemeColor(t);
+}
+/* Appli installée : la barre du système prend la couleur du fond de l'agenda (thème choisi, ou celui du téléphone) */
+function syncThemeColor(t) {
+  const col = { light: '#e2e5ea', dark: '#0b0d11' };
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+    const media = /dark/.test(m.media) ? 'dark' : 'light';
+    m.content = t === 'light' || t === 'dark' ? col[t] : col[media];
+  });
 }
 let savedTheme = 'system'; try { savedTheme = localStorage.getItem('agenda-theme') || 'system'; } catch (e) {}
 setTheme(savedTheme);

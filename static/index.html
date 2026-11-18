@@ -8,6 +8,11 @@
 <link rel="icon" href="favicon.svg?v=4" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png?v=4" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
+<!-- Application installable (PWA) : manifeste + couleur de la barre du système (suit le thème, voir syncThemeColor) -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#e2e5ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0d11" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="fonts/fonts.css">
 <script src="vendor/fullcalendar/index.global.min.js"></script>
@@ -41,6 +46,20 @@
     <button class="btn primary lg" type="submit" id="l-submit">Se connecter</button>
     <div class="pills" aria-hidden="true"><i style="flex:3;background:var(--cal-blue)"></i><i style="flex:1;background:var(--cal-pink)"></i><i style="flex:2;background:var(--cal-green)"></i></div>
   </form>
+</section>
+
+<!-- ===================== Pi injoignable (appli installée, hors connexion) ===================== -->
+<section class="login" id="offline" hidden>
+  <div class="login-card">
+    <div class="brand"><div class="mark" aria-hidden="true"><i class="mark-m"></i><span></span></div><b>Agenda</b></div>
+    <div>
+      <h1>Pi injoignable</h1>
+      <p class="lead">L’agenda n’arrive pas à joindre ton Raspberry Pi. Vérifie que ce téléphone a du réseau et que Tailscale est activé.</p>
+    </div>
+    <p class="lead" id="off-st" aria-live="polite">Nouvel essai automatique dès que le réseau revient.</p>
+    <button class="btn primary lg" type="button" id="off-retry">Réessayer</button>
+    <div class="pills" aria-hidden="true"><i style="flex:3;background:var(--cal-blue)"></i><i style="flex:1;background:var(--cal-pink)"></i><i style="flex:2;background:var(--cal-green)"></i></div>
+  </div>
 </section>
 
 <!-- ===================== Application ===================== -->

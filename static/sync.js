@@ -253,14 +253,36 @@ async function serverLogout() {
   clearData(); showLogin();
 }
 
-/* Démarrage : session encore valide (« Rester connecté ») → directement l'agenda */
-(async () => {
-  $('app').hidden = true; document.querySelector('.fab').hidden = true;   // rien d'affiché tant qu'on ne sait pas
-  const r = await api('/api/session');
-  if (r.ok) {
-    API.user = r.body.user; API.csrf = r.body.csrf; CAL_PREFIX = r.body.calPrefix || '';
-    if (await loadData()) { showUser(API.user); showApp(); return; }
-    API.user = null;
-  }
-  showLogin();
-})();
+/* Démarrage : session encore valide (« Rester connecté ») → directement l'agenda ; Pi injoignable → écran dédié */
+const unreachable = r => r.status === 0 || r.status === 502 || r.status === 503 || r.status === 504;
+let BOOTING = false, OFF_TIMER = null;
+function showOffline() {
+  $('app').hidden = true; $('login').hidden = true; document.querySelector('.fab').hidden = true;
+  $('offline').hidden = false; $('off-st').textContent = 'Nouvel essai automatique dès que le réseau revient.';
+  clearInterval(OFF_TIMER); OFF_TIMER = setInterval(() => { if (!document.hidden) boot(); }, 20e3);
+}
+async function boot() {
+  if (BOOTING) return;
+  BOOTING = true;
+  try {
+    $('app').hidden = true; document.querySelector('.fab').hidden = true;   // rien d'affiché tant qu'on ne sait pas
+    if (!$('offline').hidden) $('off-st').textContent = 'Connexion au Pi…';
+    const r = await api('/api/session');
+    if (unreachable(r)) return showOffline();
+    $('offline').hidden = true; clearInterval(OFF_TIMER);
+    if (r.ok) {
+      API.user = r.body.user; API.csrf = r.body.csrf; CAL_PREFIX = r.body.calPrefix || '';
+      if (await loadData()) { showUser(API.user); showApp(); return; }
+      API.user = null;
+    }
+    showLogin();
+  } finally { BOOTING = false; }
+}
+$('off-retry').addEventListener('click', boot);
+addEventListener('online', () => { if (!$('offline').hidden) boot(); });
+boot();
+
+/* Appli installable : le service worker garde l'interface (jamais les données) pour s'ouvrir hors connexion.
+   Seulement en HTTPS (adresse Tailscale) : le navigateur le refuse en HTTP simple. */
+if ('serviceWorker' in navigator && window.isSecureContext)
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

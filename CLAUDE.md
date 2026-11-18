@@ -133,6 +133,21 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   chaque nuit et visible sur le téléphone. Toujours en lecture seule dans l'agenda. Un ancien abonnement
   `CS:subscribed` est converti à sa première mise à jour. Mise à jour seulement quand l'agenda est ouvert.
 
+## Phase 6 — Application installable (PWA), décisions validées le 18/11/2026
+- Contexte : HTTPS via **Tailscale Serve** (hors projet) : `https://raspberryquentin.tail340eef.ts.net` → agenda
+  (`localhost:8090`), `:8443` → Radicale (DAVx⁵). Une PWA ne s'installe que depuis l'adresse HTTPS.
+- Icône d'application (192/512, dont « maskable ») : le favicon de Quentin sur le **fond sombre du logo** `#171a2c`.
+- Service worker : met en cache **uniquement l'interface** (HTML/CSS/JS/polices/vendor/icônes), **jamais `/api`** ;
+  réseau d'abord (une nouvelle version déployée est prise au rechargement), cache seulement hors connexion.
+- Hors connexion au lancement : **écran dédié « Pi injoignable »** (style de la maquette) avec « Réessayer » et
+  nouvel essai automatique au retour du réseau. Si le réseau tombe agenda ouvert : on **garde l'affichage**
+  (comportement actuel, rien n'est stocké en plus).
+- Limitation des essais derrière le proxy : `X-Forwarded-For` (dernière adresse) n'est cru **que si la requête vient
+  du proxy local** (passerelle Docker du conteneur, détectée automatiquement, ou `TRUSTED_PROXIES` du `.env`) ;
+  sinon l'adresse réelle de la connexion.
+- Après validation de l'installation : proposer `COOKIE_SECURE=true` et le port 8090 limité à `127.0.0.1`
+  (accès uniquement par HTTPS) — **demander avant**.
+
 ## Correspondances iCalendar (validées le 17/11/2026)
 - Événement ⇄ VEVENT ; `id` ⇄ UID (si l'UID contient des caractères non sûrs — `@`, `/`… — l'id est une
   empreinte stable `h…` ; le vrai UID, la ressource et l'ETag sont dans `meta`, hors de `S`) ;

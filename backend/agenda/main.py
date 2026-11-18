@@ -21,6 +21,7 @@ from .ical_write import Unsupported
 from .ical_read import Reader, calendar_id
 from .ical_todo import read_todo
 from .ics_fetch import IcsError, fetch_ics
+from .proxy import client_ip, trusted_networks
 
 TASKS = 'echeances'               # collection des échéances (préfixée « dev- » pendant les essais)
 
@@ -41,6 +42,7 @@ class LoginIn(BaseModel):
 
 
 def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
+    trusted = trusted_networks(cfg.trusted_proxies)      # proxy local (Tailscale Serve) dont on croit X-Forwarded-For
     sessions = SessionStore(cfg.session_hours, cfg.remember_days)
     limiter = RateLimiter(cfg.login_max_failures, cfg.login_window_minutes)
     state: dict = {}
@@ -120,7 +122,7 @@ def create_app(cfg: Settings = default_settings, transport: httpx.AsyncBaseTrans
     @app.post('/api/login')
     async def login(body: LoginIn, request: Request, response: Response):
         same_origin(request)
-        ip = request.client.host if request.client else '?'
+        ip = client_ip(request.client.host if request.client else None, request.headers.get('x-forwarded-for'), trusted)
         keys = (f'ip:{ip}', f'user:{body.user.strip().lower()}')
         wait = limiter.retry_after(*keys)
         if wait:
