@@ -1,4 +1,4 @@
-# À chaque envoi sur main : tests, puis image Docker arm64 publiée (privée) sur ghcr.io/chewbacca-368/agenda
+# À chaque envoi sur main : tests, puis image Docker arm64 publiée (privée) sur ghcr.io/quentin368/agenda
 name: Tests et image Docker
 
 on:
@@ -47,7 +47,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/chewbacca-368/agenda
+          images: ghcr.io/quentin368/agenda
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=short

@@ -8,7 +8,7 @@ téléphone (DAVx⁵), et inversement.
 - Adresse : **https://raspberryquentin.tail340eef.ts.net** (HTTPS via Tailscale Serve, installable sur le
   téléphone) — ou http://raspberryquentin:8090 (accès direct)
 - Identifiants : ceux de Radicale
-- Code : `~/projets/agenda` (GitHub privé `Chewbacca-368/agenda`) — Déploiement : `~/docker/agenda`
+- Code : `~/projets/agenda` (GitHub privé `Quentin368/agenda`) — Déploiement : `~/docker/agenda`
 
 ---
 
@@ -49,7 +49,7 @@ Prérequis : Docker + Compose, la pile Radicale (`~/docker/radicale`) déjà lan
    ```sh
    gh auth login                                   # connexion à GitHub (navigateur)
    gh auth refresh -s read:packages                # droit de lire les images
-   gh auth token | docker login ghcr.io -u Chewbacca-368 --password-stdin
+   gh auth token | docker login ghcr.io -u Quentin368 --password-stdin
    ```
    Le jeton passe directement de `gh` à Docker sans s'afficher ; Docker le garde dans `~/.docker/config.json`.
 

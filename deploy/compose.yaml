@@ -1,8 +1,8 @@
-# Agenda — interface web pour Radicale (code : ~/projets/agenda, image : ghcr.io/chewbacca-368/agenda)
+# Agenda — interface web pour Radicale (code : ~/projets/agenda, image : ghcr.io/quentin368/agenda)
 # Mise à jour : docker compose pull && docker compose up -d   (ou « Mettre à jour » dans Dockge)
 services:
   agenda:
-    image: ${AGENDA_IMAGE:-ghcr.io/chewbacca-368/agenda:latest}
+    image: ${AGENDA_IMAGE:-ghcr.io/quentin368/agenda:latest}
     container_name: agenda
     restart: unless-stopped
     ports:

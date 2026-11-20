@@ -31,7 +31,7 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - Conventions des piles Docker : un dossier par pile dans `~/docker/<nom>/`, volumes en CHEMINS ABSOLUS
   (Dockge transforme mal les chemins relatifs), fichiers appartenant à quentin (PUID/PGID 1000),
   `TZ=Europe/Paris`, secrets dans `.env`. Port proposé pour l'agenda : **8090** (vérifier qu'il est libre).
-- Code dans `~/projets/agenda` (git, dépôt GitHub **privé** `Chewbacca-368/agenda`, envoi via `gh`/HTTPS ;
+- Code dans `~/projets/agenda` (git, dépôt GitHub **privé** `Quentin368/agenda`, envoi via `gh`/HTTPS ;
   auteur des commits = adresse noreply GitHub, réglée localement), déploiement dans `~/docker/agenda`.
 - Frontend : `static/index.html`, `static/app.css`, `static/app.js` (la maquette), `static/sync.js` (lien avec
   le serveur : connexion, chargement, état serveur, synchronisation) ; dépendances embarquées dans
@@ -91,7 +91,7 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
   (« l'écriture arrive en phase 3 ») ; ce blocage temporaire sera retiré en phase 3.
 - Sessions : 12 h sans « Rester connecté », 30 jours glissants avec ; durées réglables dans le `.env`.
 - Image Docker **construite par GitHub Actions** (multi-arch, au moins arm64) et publiée en privé sur
-  `ghcr.io/chewbacca-368/agenda` ; le Pi la télécharge (docker login ghcr.io avec un jeton `read:packages`).
+  `ghcr.io/quentin368/agenda` ; le Pi la télécharge (docker login ghcr.io avec un jeton `read:packages`).
 - Répétitions non représentables / RECURRENCE-ID : proposition ci-dessous **validée**.
 
 ## Décisions validées (17/11/2026, début de phase 3)
@@ -145,8 +145,10 @@ Le design et le comportement de la maquette sont VALIDÉS : on les conserve à l
 - Limitation des essais derrière le proxy : `X-Forwarded-For` (dernière adresse) n'est cru **que si la requête vient
   du proxy local** (passerelle Docker du conteneur, détectée automatiquement, ou `TRUSTED_PROXIES` du `.env`) ;
   sinon l'adresse réelle de la connexion.
-- Après validation de l'installation : proposer `COOKIE_SECURE=true` et le port 8090 limité à `127.0.0.1`
-  (accès uniquement par HTTPS) — **demander avant**.
+- Installation validée le 20/11/2026. **Décision : on ne restreint pas à HTTPS** — `COOKIE_SECURE=false` et port 8090
+  ouvert comme les autres piles (Tailscale chiffre déjà le trafic ; l'adresse http://raspberryquentin:8090 reste
+  utilisable). À revoir seulement si le Pi est un jour exposé hors de Tailscale.
+- Compte GitHub renommé (20/11/2026) : dépôt `Quentin368/agenda`, image `ghcr.io/quentin368/agenda`.
 
 ## Correspondances iCalendar (validées le 17/11/2026)
 - Événement ⇄ VEVENT ; `id` ⇄ UID (si l'UID contient des caractères non sûrs — `@`, `/`… — l'id est une

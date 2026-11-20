@@ -23,7 +23,7 @@ une fois, y compris une série « spéciale » envoyée occurrence par occurrenc
 
 ### Phase 1 — Préparation, sans changement de comportement
 - Dépôt git créé dans `~/projets/agenda`, branche `main`, relié à GitHub (dépôt **privé**
-  `Chewbacca-368/agenda`, envoi après validation de la phase). Auteur des commits : `Quentin <74560823+Chewbacca-368@users.noreply.github.com>`
+  `Quentin368/agenda`, envoi après validation de la phase). Auteur des commits : `Quentin <74560823+Quentin368@users.noreply.github.com>`
   (adresse anonyme GitHub, réglée pour ce dépôt seulement). Outil `gh` installé sur le Pi (`apt install gh`).
 - `.gitignore` : `.env` et secrets, caches Python.
 - `maquette.html` conservée **intacte** à la racine, comme référence.
@@ -67,7 +67,7 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   hors saisie en cours). `app.js` : 4 retouches (appel de `serverLogin`, `serverLogout`, message d'erreur
   remis à zéro, point d'accroche `onDataChanged` à la fin de `refreshData`).
 - **Docker** : `Dockerfile` (python:3.13-alpine, 2 étapes, 102 Mo, uid 1000, healthcheck), `.dockerignore`,
-  `.github/workflows/image.yml` (tests puis image arm64 sur ghcr.io/chewbacca-368/agenda).
+  `.github/workflows/image.yml` (tests puis image arm64 sur ghcr.io/quentin368/agenda).
   Pile `~/docker/agenda` : `compose.yaml` (réseau externe `radicale_default`, conteneur en lecture seule,
   sans privilèges), `.env` (chmod 600).
 - **Tests** (58, `pytest`) : conversion (fuseaux, UTC, flottant, journées, durées et changement d'heure, fin
@@ -143,7 +143,7 @@ en 1440×900, plus 4 vues en mobile 390×844 :
   sauvegardes`, 14 gardées, chmod 600) via la crontab de quentin à 3 h ; première archive faite le 17/11.
 - Tests : 122 pytest ; navigateur 29/29.
 
-### Phase 6 — Application installable (PWA) — terminée le 18/11/2026, en attente de validation sur le téléphone
+### Phase 6 — Application installable (PWA) — validée le 20/11/2026 (installée sur le téléphone Android)
 - `static/manifest.webmanifest` (Agenda, standalone, start_url/scope `/`, couleurs de fond de l'agenda), icônes
   `static/icons/` (192/512 « any » et « maskable », dessinées depuis le favicon de Quentin sur `#171a2c`, avec un
   liseré papier : `icons/app-icon.svg`), `meta theme-color` clair/sombre + `syncThemeColor()` (suit le thème choisi).
@@ -158,8 +158,10 @@ en 1440×900, plus 4 vues en mobile 390×844 :
 - Tests : 134 pytest (+ `tests/test_proxy_pwa.py`) ; `tools/e2e_pwa.py` (vrai Chromium + vrai serveur) 10/10 :
   installable selon Chrome, service worker actif, cache sans /api, mise à jour au rechargement, hors connexion,
   retour du Pi ; `tools/e2e_navigateur.py` 32/32.
-- Reste (étape 3 de la demande) : après validation de l'installation, proposer `COOKIE_SECURE=true` et le port 8090
-  limité à `127.0.0.1` — demander avant.
+- Étape 3 : proposée puis **refusée** (20/11/2026) — on garde `COOKIE_SECURE=false` et le port 8090 ouvert : Tailscale
+  chiffre déjà le trafic et l'adresse HTTP reste utilisable (voir CLAUDE.md).
+- Compte GitHub renommé (20/11/2026) : `Quentin368/agenda`, image `ghcr.io/quentin368/agenda` (workflow, compose,
+  README, CLAUDE.md mis à jour ; remote git et e-mail noreply des commits aussi).
 
 ## Reste à faire
 - Rien d'obligatoire. Idées si besoin : copier de temps en temps une sauvegarde hors du Pi (les archives sont sur
